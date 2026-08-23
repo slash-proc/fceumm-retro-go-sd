@@ -19,6 +19,14 @@ extern uint32_t __CORE_CODE_END__;
 
 void gw_core_bridge_init(void);
 
+/* DMA2D ABI stand-ins (device: gw_core_bridge.h). */
+uint32_t dma2d_m2m_rgb565_start(uint32_t src, uint32_t dst, uint16_t width, uint16_t height);
+uint32_t dma2d_m2m_rgb565_start_ex(uint32_t src, uint32_t dst, uint16_t width, uint16_t height,
+                                   uint16_t src_offset, uint16_t dst_offset);
+uint32_t dma2d_r2m_rgb565_start(uint32_t color, uint32_t dst, uint16_t width, uint16_t height,
+                                uint16_t dst_offset);
+uint32_t dma2d_poll(uint32_t timeout_ms);
+
 /* Optional: path passed on the CLI / HOST_ROM for core ROM load. */
 void host_set_rom_path(const char *path);
 int host_poll_events(void); /* returns 0 if the window should quit */

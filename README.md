@@ -30,6 +30,7 @@ Cheat files use the `ggcodes` extension (Game Genie).
 - **DTCM**: WRAM / CHR-RAM / ExtraNTA via `dtc_calloc`
 - **RAM_EMU**: core image (after 48 KiB mapper window) + `ram_calloc` FCEU heap
 - **AHB**: unused by this core (tight ~56 KiB budget)
+- **LCD**: compile-time via `NES_LCD_MODE=rgb565` (default) or `NES_LCD_MODE=lut8` (frees ~150 KiB RAM_UC)
 
 ## Logos
 

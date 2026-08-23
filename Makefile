@@ -1,6 +1,7 @@
 # Nintendo Entertainment System (FCEUmm) — standalone Retro-Go SD core.
 #
 #   make                  — build + pack → nes.bin (+ nes_fceumm_mappers/)
+#   make NES_LCD_MODE=lut8|rgb565
 #   make docker           — same build inside Docker (no host toolchain)
 #   make docker_shell     — interactive shell in the builder image
 #
@@ -8,6 +9,9 @@
 # /cores/nes_fceumm_mappers/mappers.pak). Hot CPU/PPU/sound .text lives in
 # ITCM; FCEU heap data uses RAM_EMU (ram_calloc); WRAM/CHR-RAM use DTCM.
 # BUILD_DIR must stay `build`: ld/nes_core.ld names objects as build/*.o.
+#
+# NES_LCD_MODE (default rgb565): compile-time LCD pixel format — LUT8 frees
+# ~150 KiB RAM_UC; rgb565 matches the classic firmware blit path.
 
 #######################################
 # Project identity
@@ -63,19 +67,34 @@ BUILD_DIR ?= build
 # Kind-specific compile defs + packing
 #######################################
 ifeq ($(PROJECT_KIND),core)
-# FCEU_* / VIDEO_RGB565 / __LIBRETRO__: match firmware nes_fceu C_DEFS.
+# FCEU_* / __LIBRETRO__: match firmware nes_fceu C_DEFS.
 # COVERFLOW+CHEAT_CODES must match firmware ACTIVE_FILE layout.
+NES_LCD_MODE ?= rgb565
+ifeq ($(NES_LCD_MODE),lut8)
+NES_LCD_DEF := -DNES_LCD_LUT8=1
+else ifeq ($(NES_LCD_MODE),rgb565)
+NES_LCD_DEF := -DNES_LCD_RGB565=1
+else
+$(error NES_LCD_MODE must be 'lut8' or 'rgb565' (got '$(NES_LCD_MODE)'))
+endif
+
 CORE_C_DEFS := \
 -DPROJECT_KIND_CORE=1 \
 -DTARGET_GNW \
 -DFCEU_VERSION_NUMERIC=9813 \
 -DFCEU_LOW_RAM \
 -DFCEU_NO_MALLOC \
--DVIDEO_RGB565 \
 -D__LIBRETRO__ \
 -DCOVERFLOW=1 \
 -DCHEAT_CODES=1 \
--DMAX_CHEAT_CODES=13
+-DMAX_CHEAT_CODES=13 \
+$(NES_LCD_DEF)
+
+# Drop main_nes_fceu.o when NES_LCD_MODE changes (defs alone are invisible to make).
+NES_LCD_STAMP := $(BUILD_DIR)/.nes_lcd_mode
+ifneq ($(shell cat $(NES_LCD_STAMP) 2>/dev/null),$(NES_LCD_MODE))
+$(shell mkdir -p $(BUILD_DIR) && echo $(NES_LCD_MODE) > $(NES_LCD_STAMP) && rm -f $(BUILD_DIR)/main_nes_fceu.o)
+endif
 
 PACKED_BIN  := $(CORE_NAME).bin
 PAD_LOGO    := src/assets/pad.bmp

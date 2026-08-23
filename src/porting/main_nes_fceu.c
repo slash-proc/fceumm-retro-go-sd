@@ -28,6 +28,7 @@
 #ifdef HOST_BUILD
 #include "host_compat.h"
 #else
+#include "stm32h7xx.h"
 #include "gw_core_bridge.h"
 #endif
 #include "nes_i18n.h"
@@ -71,7 +72,11 @@ static int32_t *sound = 0;
 
 static uint32_t fceu_joystick; /* player input data, 1 byte per player (1-4) */
 
-static void blit(uint8_t *src, uint16_t *framebuffer);
+static void blit(uint8_t *src);
+static void nes_present_frame(void);
+#if NES_LCD_LUT8
+static void nes_flush_palette(void);
+#endif
 static bool crop_overscan_v_cb(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat);
 static bool crop_overscan_h_cb(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat);
 static bool fds_eject_cb(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat);
@@ -210,7 +215,7 @@ static void *Screenshot()
     lcd_wait_for_vblank();
 
     lcd_clear_active_buffer();
-    blit(nes_framebuffer, lcd_get_active_buffer());
+    nes_present_frame();
     return lcd_get_active_buffer();
 }
 
@@ -343,6 +348,27 @@ static void *Screenshot()
   
 unsigned dendy = 0;
 
+#if NES_LCD_LUT8
+/* LTDC CLUT as 0x00RRGGBB — full 256 slots for deemphasis / sprite flags. */
+static uint32_t palette_clut[256];
+static bool palette_clut_dirty = true;
+
+static void nes_flush_palette(void)
+{
+    if (!palette_clut_dirty)
+        return;
+    lcd_set_clut(palette_clut, 256);
+    palette_clut_dirty = false;
+}
+
+void FCEUD_SetPalette(uint16 index, uint8_t r, uint8_t g, uint8_t b)
+{
+    if (index >= 256)
+        return;
+    palette_clut[index] = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    palette_clut_dirty = true;
+}
+#else
 static uint16_t palette565[256];
 static uint32_t palette_spaced_565[256];
 
@@ -353,16 +379,20 @@ static uint32_t palette_spaced_565[256];
 #define GREEN_EXPAND 2
 #define BLUE_EXPAND 3
 #define BUILD_PIXEL_RGB565(R,G,B) (((int) ((R)&0x1f) << RED_SHIFT) | ((int) ((G)&0x3f) << GREEN_SHIFT) | ((int) ((B)&0x1f) << BLUE_SHIFT))
+#define CONV(_b0) ((0b11111000000000000000000000&_b0)>>10) | ((0b000001111110000000000&_b0)>>5) | ((0b0000000000011111&_b0));
 
 void FCEUD_SetPalette(uint16 index, uint8_t r, uint8_t g, uint8_t b)
 {
-   if (index >= 256)
-      return;
+    if (index >= 256)
+        return;
     uint16_t color_565 = BUILD_PIXEL_RGB565(r >> RED_EXPAND, g >> GREEN_EXPAND, b >> BLUE_EXPAND);
     palette565[index] = color_565;
-    uint32_t sc = ((0b1111100000000000&color_565)<<10) | ((0b0000011111100000&color_565)<<5) | ((0b0000000000011111&color_565));
-    palette_spaced_565[index] = sc;
+    palette_spaced_565[index] =
+        ((0b1111100000000000 & color_565) << 10) |
+        ((0b0000011111100000 & color_565) << 5) |
+        ((0b0000000000011111 & color_565));
 }
+#endif
 
 static void nesInputUpdate(odroid_gamepad_state_t *joystick)
 {
@@ -404,9 +434,181 @@ static void nesInputUpdate(odroid_gamepad_state_t *joystick)
     fceu_joystick = input_buf;
 }
 
-// No scaling
+/* ---------- LUT8 blitters (palette indices → L8 framebuffer) ---------- */
+#if NES_LCD_LUT8
+
+/* CPU fallback for 1:1 LUT8 copy (used if DMA2D start fails). */
 __attribute__((optimize("unroll-loops")))
-static inline void blit_normal(uint8_t *src, uint16_t *framebuffer) {
+static void blit_normal_cpu_lut8(uint8_t *src, uint8_t *framebuffer,
+                                 uint16_t width, uint16_t height,
+                                 uint8_t incr, uint8_t offset_x, uint8_t offset_y)
+{
+    for (uint32_t y = 0; y < height; y++, src += incr) {
+        for (uint32_t x = 0; x < width; x++, src++) {
+            framebuffer[(y + offset_y) * GW_LCD_WIDTH + x + offset_x] = *src;
+        }
+    }
+}
+
+/*
+ * 1:1 LUT8 blit via DMA2D. The ABI only exposes RGB565 M2M helpers; for
+ * even widths we treat each RGB565 "pixel" as two palette indices so the
+ * same path copies L8 bytes with correct line offsets (pitch - width).
+ */
+static void blit_normal_lut8(uint8_t *src, uint8_t *framebuffer) {
+    uint8_t incr   = 0;
+    uint16_t width  = NES_WIDTH;
+    uint16_t height = NES_HEIGHT;
+    uint8_t offset_x  = (GW_LCD_WIDTH - width) / 2;
+    uint8_t offset_y  = 0;
+
+    incr     += (crop_overscan_h ? 16 : 0);
+    width    -= (crop_overscan_h ? 16 : 0);
+    height   -= (crop_overscan_v ? 16 : 0);
+    src      += (crop_overscan_v ? ((crop_overscan_h ? 8 : 0) + NES_WIDTH * 8) : (crop_overscan_h ? 8 : 0));
+    offset_x += (crop_overscan_h ? 8 : 0);
+    offset_y  = (crop_overscan_v ? 8 : 0);
+
+    /* Width is always even (256 or 240); required for RGB565-as-L8 packing. */
+    if ((width & 1u) == 0u && height != 0) {
+        uint8_t *dst = framebuffer + (uint32_t)offset_y * GW_LCD_WIDTH + offset_x;
+        uint16_t w_rgb = width / 2;
+        uint16_t src_off = incr / 2;                 /* NES_WIDTH - width, in RGB565 units */
+        uint16_t dst_off = (GW_LCD_WIDTH - width) / 2;
+
+#ifndef HOST_BUILD
+        /* Source lives in cacheable RAM_EMU; DMA2D is cache-blind. */
+        {
+            uintptr_t a = (uintptr_t)src & ~31u;
+            uintptr_t e = ((uintptr_t)src + (uintptr_t)height * NES_WIDTH + 31u) & ~31u;
+            SCB_CleanDCache_by_Addr((uint32_t *)a, (int32_t)(e - a));
+        }
+#endif
+
+        wdog_refresh();
+        if (dma2d_m2m_rgb565_start_ex((uint32_t)(uintptr_t)src,
+                                      (uint32_t)(uintptr_t)dst,
+                                      w_rgb, height, src_off, dst_off) == 0) {
+            while (dma2d_poll(1) != 0)
+                wdog_refresh();
+            return;
+        }
+    }
+
+    blit_normal_cpu_lut8(src, framebuffer, width, height, incr, offset_x, offset_y);
+}
+
+__attribute__((optimize("unroll-loops")))
+static inline void screen_blit_nn_lut8(uint8_t *src, uint8_t *framebuffer)
+{
+    uint16_t w1 = NES_WIDTH - (crop_overscan_h ? 16 : 0);
+    uint16_t h1 = NES_HEIGHT - (crop_overscan_v ? 16 : 0);
+    uint16_t w2 = GW_LCD_WIDTH;
+    uint16_t h2 = GW_LCD_HEIGHT;
+    uint8_t src_x_offset = (crop_overscan_h ? 8 : 0);
+    uint8_t src_y_offset = (crop_overscan_v ? 8 : 0);
+    int x_ratio = (int)((w1<<16)/w2) +1;
+    int y_ratio = (int)((h1<<16)/h2) +1;
+
+    int x2;
+    int y2;
+
+    for (int i=0;i<h2;i++) {
+        for (int j=0;j<w2;j++) {
+            x2 = ((j*x_ratio)>>16) ;
+            y2 = ((i*y_ratio)>>16) ;
+            uint8_t b2 = src[((y2+src_y_offset)*NES_WIDTH)+x2+src_x_offset];
+            framebuffer[(i*w2)+j] = b2;
+        }
+    }
+}
+
+__attribute__((optimize("unroll-loops")))
+static inline void blit_nearest_lut8(uint8_t *src, uint8_t *framebuffer)
+{
+    int w1 = NES_WIDTH - (crop_overscan_h ? 16 : 0);
+    int w2 = GW_LCD_WIDTH;
+    int h2 = GW_LCD_HEIGHT - (crop_overscan_v ? 16 : 0);
+    int src_x_offset = (crop_overscan_h ? 8 : 0);
+    int dst_x_offset = (crop_overscan_h ? 10 : 0);
+    uint8_t y_offset = (crop_overscan_v ? 8 : 0);
+    int scale_ctr = 3;
+
+    for (int y = y_offset; y < h2; y++) {
+        int ctr = 0;
+        uint8_t *src_row  = &src[y*NES_WIDTH+src_x_offset];
+        uint8_t *dest_row = &framebuffer[y * w2 + dst_x_offset];
+        int x2 = 0;
+        for (int x = 0; x < w1; x++) {
+            uint8_t b2 = src_row[x];
+            dest_row[x2++] = b2;
+            if (ctr++ == scale_ctr) {
+                ctr = 0;
+                dest_row[x2++] = b2;
+            }
+        }
+    }
+}
+
+/* 5:6 nearest (no RGB blend — LUT8 cannot interpolate palette indices). */
+__attribute__((optimize("unroll-loops")))
+static void blit_5to6_lut8(uint8_t *src, uint8_t *framebuffer) {
+    int w1_adjusted = NES_WIDTH - 4 - (crop_overscan_h ? 16 : 0);
+    int w2 = WIDTH;
+    int h2 = GW_LCD_HEIGHT - (crop_overscan_v ? 16 : 0);
+    int dst_x_offset = (WIDTH - 307) / 2 + (crop_overscan_h ? 9 : 0);
+
+    int src_x_offset = (crop_overscan_h ? 8 : 0);
+    uint8_t y_offset = (crop_overscan_v ? 8 : 0);
+
+    for (int y = y_offset; y < h2; y++) {
+        uint8_t *src_row  = &src[y*NES_WIDTH+src_x_offset];
+        uint8_t *dest_row = &framebuffer[y * w2 + dst_x_offset];
+        int x_src = 0;
+        int x_dst = 0;
+        for (; x_src < w1_adjusted; x_src+=5, x_dst+=6) {
+            dest_row[x_dst]   = src_row[x_src];
+            dest_row[x_dst+1] = src_row[x_src+1];
+            dest_row[x_dst+2] = src_row[x_src+1];
+            dest_row[x_dst+3] = src_row[x_src+2];
+            dest_row[x_dst+4] = src_row[x_src+3];
+            dest_row[x_dst+5] = src_row[x_src+4];
+        }
+        dest_row[x_dst] = src_row[x_src];
+    }
+}
+
+static void blit_lut8(uint8_t *src, uint8_t *framebuffer)
+{
+    odroid_display_scaling_t scaling = odroid_display_get_scaling_mode();
+
+    switch (scaling) {
+    case ODROID_DISPLAY_SCALING_OFF:
+        blit_normal_lut8(src, framebuffer);
+        break;
+    case ODROID_DISPLAY_SCALING_FIT:
+        screen_blit_nn_lut8(src, framebuffer);
+        break;
+    case ODROID_DISPLAY_SCALING_FULL:
+        /* Filtered RGB blend is not available in LUT8 — nearest only. */
+        blit_nearest_lut8(src, framebuffer);
+        break;
+    case ODROID_DISPLAY_SCALING_CUSTOM:
+        blit_5to6_lut8(src, framebuffer);
+        break;
+    default:
+        printf("Unknown scaling mode %d\n", scaling);
+        assert(!"Unknown scaling mode");
+        break;
+    }
+}
+
+#else /* NES_LCD_RGB565 */
+
+/* ---------- RGB565 blitters (palette indices → RGB565 framebuffer) ---------- */
+
+__attribute__((optimize("unroll-loops")))
+static inline void blit_normal_rgb565(uint8_t *src, uint16_t *framebuffer) {
     uint32_t x, y;
     uint8_t incr   = 0;
     uint16_t width  = NES_WIDTH;
@@ -429,7 +631,7 @@ static inline void blit_normal(uint8_t *src, uint16_t *framebuffer) {
 }
 
 __attribute__((optimize("unroll-loops")))
-static inline void screen_blit_nn(uint8_t *src, uint16_t *framebuffer)
+static inline void screen_blit_nn_rgb565(uint8_t *src, uint16_t *framebuffer)
 {
     uint16_t w1 = NES_WIDTH - (crop_overscan_h ? 16 : 0);
     uint16_t h1 = NES_HEIGHT - (crop_overscan_v ? 16 : 0);
@@ -454,7 +656,7 @@ static inline void screen_blit_nn(uint8_t *src, uint16_t *framebuffer)
 }
 
 __attribute__((optimize("unroll-loops")))
-static inline void blit_nearest(uint8_t *src, uint16_t *framebuffer)
+static inline void blit_nearest_rgb565(uint8_t *src, uint16_t *framebuffer)
 {
     int w1 = NES_WIDTH - (crop_overscan_h ? 16 : 0);
     int w2 = GW_LCD_WIDTH;
@@ -462,7 +664,6 @@ static inline void blit_nearest(uint8_t *src, uint16_t *framebuffer)
     int src_x_offset = (crop_overscan_h ? 8 : 0);
     int dst_x_offset = (crop_overscan_h ? 10 : 0);
     uint8_t y_offset = (crop_overscan_v ? 8 : 0);
-    // duplicate one column every 3 lines -> x1.25
     int scale_ctr = 3;
 
     for (int y = y_offset; y < h2; y++) {
@@ -481,10 +682,8 @@ static inline void blit_nearest(uint8_t *src, uint16_t *framebuffer)
     }
 }
 
-#define CONV(_b0) ((0b11111000000000000000000000&_b0)>>10) | ((0b000001111110000000000&_b0)>>5) | ((0b0000000000011111&_b0));
-
 __attribute__((optimize("unroll-loops")))
-static void blit_4to5(uint8_t *src, uint16_t *framebuffer) {
+static void blit_4to5_rgb565(uint8_t *src, uint16_t *framebuffer) {
     int w1 = NES_WIDTH - (crop_overscan_h ? 16 : 0);
     int w2 = GW_LCD_WIDTH;
     int h2 = GW_LCD_HEIGHT - (crop_overscan_v ? 16 : 0);
@@ -511,9 +710,8 @@ static void blit_4to5(uint8_t *src, uint16_t *framebuffer) {
     }
 }
 
-
 __attribute__((optimize("unroll-loops")))
-static void blit_5to6(uint8_t *src, uint16_t *framebuffer) {
+static void blit_5to6_rgb565(uint8_t *src, uint16_t *framebuffer) {
     int w1_adjusted = NES_WIDTH - 4 - (crop_overscan_h ? 16 : 0);
     int w2 = WIDTH;
     int h2 = GW_LCD_HEIGHT - (crop_overscan_v ? 16 : 0);
@@ -522,7 +720,6 @@ static void blit_5to6(uint8_t *src, uint16_t *framebuffer) {
     int src_x_offset = (crop_overscan_h ? 8 : 0);
     uint8_t y_offset = (crop_overscan_v ? 8 : 0);
 
-    // x 1.2
     for (int y = y_offset; y < h2; y++) {
         uint8_t  *src_row  = &src[y*NES_WIDTH+src_x_offset];
         uint16_t *dest_row = &framebuffer[y * w2 + dst_x_offset];
@@ -542,36 +739,31 @@ static void blit_5to6(uint8_t *src, uint16_t *framebuffer) {
             dest_row[x_dst+4] = CONV((b3+b3+b3+b4)>>2);
             dest_row[x_dst+5] = CONV(b4);
         }
-        // Last column, x_src=255
         dest_row[x_dst] = palette565[src_row[x_src]];
     }
 }
 
-static void blit(uint8_t *src, uint16_t *framebuffer)
+static void blit_rgb565(uint8_t *src, uint16_t *framebuffer)
 {
     odroid_display_scaling_t scaling = odroid_display_get_scaling_mode();
     odroid_display_filter_t filtering = odroid_display_get_filter_mode();
 
     switch (scaling) {
     case ODROID_DISPLAY_SCALING_OFF:
-        // Full height, borders on the side
-        blit_normal(src, framebuffer);
+        blit_normal_rgb565(src, framebuffer);
         break;
     case ODROID_DISPLAY_SCALING_FIT:
-        // Full height and width, with cropping removal
-        screen_blit_nn(src, framebuffer);
+        screen_blit_nn_rgb565(src, framebuffer);
         break;
     case ODROID_DISPLAY_SCALING_FULL:
-        // full height, full width
         if (filtering == ODROID_DISPLAY_FILTER_OFF) {
-            blit_nearest(src, framebuffer);
+            blit_nearest_rgb565(src, framebuffer);
         } else {
-            blit_4to5(src, framebuffer);
+            blit_4to5_rgb565(src, framebuffer);
         }
         break;
     case ODROID_DISPLAY_SCALING_CUSTOM:
-        // full height, almost full width
-        blit_5to6(src, framebuffer);
+        blit_5to6_rgb565(src, framebuffer);
         break;
     default:
         printf("Unknown scaling mode %d\n", scaling);
@@ -580,9 +772,23 @@ static void blit(uint8_t *src, uint16_t *framebuffer)
     }
 }
 
+#endif /* NES_LCD_LUT8 / RGB565 */
+
+static void blit(uint8_t *src)
+{
+#if NES_LCD_LUT8
+    blit_lut8(src, (uint8_t *)lcd_get_active_buffer());
+#else
+    blit_rgb565(src, (uint16_t *)lcd_get_active_buffer());
+#endif
+}
+
 static void nes_present_frame(void)
 {
-    blit(nes_framebuffer, lcd_get_active_buffer());
+#if NES_LCD_LUT8
+    nes_flush_palette();
+#endif
+    blit(nes_framebuffer);
     common_ingame_overlay();
 }
 
@@ -917,6 +1123,13 @@ int app_main_nes_fceu(uint8_t load_state, uint8_t start_paused, int8_t save_slot
     if (odroid_settings_cpu_oc_level_get() == 0) {
         SystemClock_Config(2);
     }
+
+#if NES_LCD_LUT8
+    lcd_setup_framebuffers(LCD_MODE_LUT8);
+#else
+    lcd_setup_framebuffers(LCD_MODE_RGB565);
+#endif
+    lcd_clear_buffers();
 
     uint32_t sndsamplerate = NES_FREQUENCY_48K;
     odroid_gamepad_state_t joystick;

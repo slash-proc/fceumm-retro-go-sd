@@ -60,6 +60,10 @@ DMA_HandleTypeDef hdma_spi1_rx;
 odroid_menu_state_t odroid_menu_state;
 
 static pixel_t fb_storage[2][GW_LCD_WIDTH * GW_LCD_HEIGHT];
+static uint8_t lut8_fb_storage[2][GW_LCD_WIDTH * GW_LCD_HEIGHT];
+static uint16_t lut8_present_rgb[GW_LCD_WIDTH * GW_LCD_HEIGHT];
+static uint32_t host_clut[256];
+static int host_lcd_mode = LCD_MODE_RGB565;
 static host_pad_t host_pad;
 static int16_t audio_half_bufs[2][AUDIO_BUFFER_LENGTH];
 static uint16_t audio_half_len;
@@ -281,18 +285,28 @@ static void host_maybe_quit(void)
 
 void lcd_clear_buffers(void)
 {
-    memset(fb_storage, 0, sizeof(fb_storage));
+    if (host_lcd_mode == LCD_MODE_LUT8) {
+        memset(lut8_fb_storage, 0, sizeof(lut8_fb_storage));
+    } else {
+        memset(fb_storage, 0, sizeof(fb_storage));
+    }
 }
 
 void *lcd_clear_active_buffer(void)
 {
-    memset(lcd_get_active_buffer(), 0, GW_LCD_FRAME_SIZE);
+    size_t sz = (host_lcd_mode == LCD_MODE_LUT8)
+                    ? (size_t)(GW_LCD_WIDTH * GW_LCD_HEIGHT)
+                    : GW_LCD_FRAME_SIZE;
+    memset(lcd_get_active_buffer(), 0, sz);
     return lcd_get_active_buffer();
 }
 
 void *lcd_clear_inactive_buffer(void)
 {
-    memset(lcd_get_inactive_buffer(), 0, GW_LCD_FRAME_SIZE);
+    size_t sz = (host_lcd_mode == LCD_MODE_LUT8)
+                    ? (size_t)(GW_LCD_WIDTH * GW_LCD_HEIGHT)
+                    : GW_LCD_FRAME_SIZE;
+    memset(lcd_get_inactive_buffer(), 0, sz);
     return lcd_get_inactive_buffer();
 }
 
@@ -306,11 +320,64 @@ void *lcd_get_inactive_buffer(void)
     return active_framebuffer ? framebuffer1 : framebuffer2;
 }
 
+void lcd_setup_framebuffers(int lcd_mode)
+{
+    host_lcd_mode = lcd_mode;
+    if (lcd_mode == LCD_MODE_LUT8) {
+        framebuffer1 = (pixel_t *)lut8_fb_storage[0];
+        framebuffer2 = (pixel_t *)lut8_fb_storage[1];
+    } else {
+        framebuffer1 = fb_storage[0];
+        framebuffer2 = fb_storage[1];
+    }
+}
+
+void lcd_set_clut(const uint32_t *clut, uint16_t count)
+{
+    if (!clut)
+        return;
+    if (count > 256)
+        count = 256;
+    memcpy(host_clut, clut, (size_t)count * sizeof(uint32_t));
+    if (count < 256)
+        memset(host_clut + count, 0, (size_t)(256 - count) * sizeof(uint32_t));
+}
+
+int lcd_get_mode(void)
+{
+    return host_lcd_mode;
+}
+
+size_t lcd_get_frame_size(void)
+{
+    return (host_lcd_mode == LCD_MODE_LUT8)
+               ? (size_t)(GW_LCD_WIDTH * GW_LCD_HEIGHT)
+               : GW_LCD_FRAME_SIZE;
+}
+
+static void host_lut8_to_rgb565(const uint8_t *src, uint16_t *dst, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        uint32_t c = host_clut[src[i]];
+        uint8_t r = (c >> 16) & 0xff;
+        uint8_t g = (c >> 8) & 0xff;
+        uint8_t b = c & 0xff;
+        dst[i] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+    }
+}
+
 void lcd_swap(void)
 {
     host_poll_events();
-    host_platform_present_rgb565((const uint16_t *)lcd_get_active_buffer(),
-                                 GW_LCD_WIDTH, GW_LCD_HEIGHT);
+    if (host_lcd_mode == LCD_MODE_LUT8) {
+        host_lut8_to_rgb565((const uint8_t *)lcd_get_active_buffer(),
+                            lut8_present_rgb,
+                            (size_t)GW_LCD_WIDTH * GW_LCD_HEIGHT);
+        host_platform_present_rgb565(lut8_present_rgb, GW_LCD_WIDTH, GW_LCD_HEIGHT);
+    } else {
+        host_platform_present_rgb565((const uint16_t *)lcd_get_active_buffer(),
+                                     GW_LCD_WIDTH, GW_LCD_HEIGHT);
+    }
     active_framebuffer ^= 1;
     frame_counter++;
     host_maybe_quit();
@@ -990,6 +1057,56 @@ void wdog_refresh(void)
 {
     host_poll_events();
     host_maybe_quit();
+}
+
+/* DMA2D stand-ins: row memcpy with the same pitch semantics as the firmware
+ * RGB565 helpers (offsets are pixels; each pixel is 2 bytes). */
+uint32_t dma2d_m2m_rgb565_start_ex(uint32_t src, uint32_t dst,
+                                   uint16_t width, uint16_t height,
+                                   uint16_t src_offset, uint16_t dst_offset)
+{
+    const uint8_t *s = (const uint8_t *)(uintptr_t)src;
+    uint8_t *d = (uint8_t *)(uintptr_t)dst;
+    size_t row_bytes = (size_t)width * 2u;
+    size_t src_stride = row_bytes + (size_t)src_offset * 2u;
+    size_t dst_stride = row_bytes + (size_t)dst_offset * 2u;
+
+    if (width == 0 || height == 0)
+        return 1;
+    for (uint16_t y = 0; y < height; y++) {
+        memcpy(d, s, row_bytes);
+        s += src_stride;
+        d += dst_stride;
+    }
+    return 0;
+}
+
+uint32_t dma2d_m2m_rgb565_start(uint32_t src, uint32_t dst, uint16_t width, uint16_t height)
+{
+    return dma2d_m2m_rgb565_start_ex(src, dst, width, height, 0, 0);
+}
+
+uint32_t dma2d_r2m_rgb565_start(uint32_t color, uint32_t dst,
+                                uint16_t width, uint16_t height,
+                                uint16_t dst_offset)
+{
+    uint16_t *d = (uint16_t *)(uintptr_t)dst;
+    uint16_t c = (uint16_t)(color & 0xffffu);
+
+    if (width == 0 || height == 0)
+        return 1;
+    for (uint16_t y = 0; y < height; y++) {
+        for (uint16_t x = 0; x < width; x++)
+            d[x] = c;
+        d += (size_t)width + dst_offset;
+    }
+    return 0;
+}
+
+uint32_t dma2d_poll(uint32_t timeout_ms)
+{
+    (void)timeout_ms;
+    return 0; /* host path is synchronous */
 }
 
 void Error_Handler(void) { abort(); }
