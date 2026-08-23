@@ -658,6 +658,7 @@ void ResetGameLoaded(void)
 
 	GameStateRestore = NULL;
 	PPU_hook = NULL;
+	PPU_tksrom = 0;
 	GameHBIRQHook = NULL;
 
 	if (GameExpSound.Kill)

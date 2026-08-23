@@ -113,6 +113,7 @@ static int deempcnt[8];
 
 void (*GameHBIRQHook)(void), (*GameHBIRQHook2)(void);
 void FP_FASTAPASS(1) (*PPU_hook)(uint32 A);
+uint8 PPU_tksrom = 0;
 
 uint8 vtoggle = 0;
 uint8 XOffset = 0;
@@ -545,7 +546,17 @@ static void FASTAPASS(1) RefreshLine(int lastpixel) {
 		}
 	}
 	#undef PPUT_MMC5
-	else if (PPU_hook) {
+	else if (PPU_tksrom) {
+		/* Fast tile loop + nametable PPU_hooks (status bar); CHR page gated. */
+		uint8 tks_last_pg = 0xFF;
+		norecurse = 1;
+		#define PPUT_TKSROM
+		for (X1 = firsttile; X1 < lasttile; X1++) {
+			#include "pputile.h"
+		}
+		#undef PPUT_TKSROM
+		norecurse = 0;
+	} else if (PPU_hook) {
 		norecurse = 1;
 		#define PPUT_HOOK
 		if (PEC586Hack) {

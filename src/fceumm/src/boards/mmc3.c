@@ -918,7 +918,13 @@ static void FP_FASTAPASS(1) TKSPPU(uint32 A) {
 	m = TKSMIR[A];
 	if (m != TKSLastMir) {
 		TKSLastMir = m;
-		setmirror(MI_0 + m);
+		/* Single-screen via CHR A17 — skip setmirror→LineUpdate (no-op or
+		 * re-entrant during RefreshLine). CPU bank writes still use setmirror. */
+		{
+			uint8 *p = NTARAM + ((uint32)m << 10);
+			vnapage[0] = vnapage[1] = vnapage[2] = vnapage[3] = p;
+			PPUNTARAM = 0xF;
+		}
 	}
 }
 
@@ -1622,6 +1628,7 @@ void TLSROM_Init(CartInfo *info) {
 	cwrap = TKSWRAP;
 	mwrap = GENNOMWRAP;
 	PPU_hook = TKSPPU;
+	PPU_tksrom = 1;
 	TKSLastMir = 0xFF;
 	AddExState(&PPUCHRBus, 1, 0, "PPUC");
 	AddExState(&TKSLastMir, 1, 0, "TKLM");
@@ -1632,6 +1639,7 @@ void TKSROM_Init(CartInfo *info) {
 	cwrap = TKSWRAP;
 	mwrap = GENNOMWRAP;
 	PPU_hook = TKSPPU;
+	PPU_tksrom = 1;
 	TKSLastMir = 0xFF;
 	AddExState(&PPUCHRBus, 1, 0, "PPUC");
 	AddExState(&TKSLastMir, 1, 0, "TKLM");

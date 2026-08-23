@@ -11,6 +11,8 @@ void FCEUPPU_SetVideoSystem(int w);
 
 extern void (*GameHBIRQHook)(void), (*GameHBIRQHook2)(void);
 extern void FP_FASTAPASS(1) (*PPU_hook)(uint32 A);
+/* Mapper 118 (TKSROM): fast BG path; nametable hooks + CHR-page-gated pattern. */
+extern uint8 PPU_tksrom;
 
 /* For cart.c and banksw.h, mostly */
 extern uint8 NTARAM[0x800], *vnapage[4];

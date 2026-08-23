@@ -49,6 +49,11 @@ if (X1 >= 2) {
 	PPU_hook(0x2000 | (RefreshAddr & 0xfff));
 #endif
 
+#ifdef PPUT_TKSROM
+	/* Nametable hooks required for TLSROM status-bar splits (Ys III). */
+	PPU_hook(0x2000 | (RefreshAddr & 0xfff));
+#endif
+
 #ifdef PPUT_MMC5SP
 	cc = MMC5HackExNTARAMPtr[0x3c0 + (xs >> 2) + ((ys & 0x1C) << 1)];
 	cc = ((cc >> ((xs & 2) + ((ys & 0x2) << 1))) & 3);
@@ -82,6 +87,17 @@ pshift[1] <<= 8;
 	#endif
 #endif
 
+#ifdef PPUT_TKSROM
+	/* Pattern CHR page — still gated; nametable hooks cover the split. */
+	{
+		uint8 pg = (uint8)((vadr >> 10) & 7);
+		if (pg != tks_last_pg) {
+			tks_last_pg = pg;
+			PPU_hook(vadr);
+		}
+	}
+#endif
+
 #ifdef PPUT_HOOK
 	PPU_hook(vadr);
 #endif
@@ -105,5 +121,9 @@ else
 	RefreshAddr++;
 
 #ifdef PPUT_HOOK
+	PPU_hook(0x2000 | (RefreshAddr & 0xfff));
+#endif
+
+#ifdef PPUT_TKSROM
 	PPU_hook(0x2000 | (RefreshAddr & 0xfff));
 #endif
