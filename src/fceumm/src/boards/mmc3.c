@@ -908,19 +908,28 @@ void Mapper115_Init(CartInfo *info) {
 
 static uint8 PPUCHRBus;
 static uint8 TKSMIR[8];
+/* Cache last CIRAM A10; PPU_hook is ~30k/frame and mirror rarely changes. */
+static uint8 TKSLastMir;
 
 static void FP_FASTAPASS(1) TKSPPU(uint32 A) {
-	A &= 0x1FFF;
-	A >>= 10;
+	uint8 m;
+	A = (A & 0x1FFF) >> 10;
 	PPUCHRBus = A;
-	setmirror(MI_0 + TKSMIR[A]);
+	m = TKSMIR[A];
+	if (m != TKSLastMir) {
+		TKSLastMir = m;
+		setmirror(MI_0 + m);
+	}
 }
 
 static void TKSWRAP(uint32 A, uint8 V) {
-	TKSMIR[A >> 10] = V >> 7;
+	uint8 m = V >> 7;
+	TKSMIR[A >> 10] = m;
 	setchr1(A, V & 0x7F);
-	if (PPUCHRBus == (A >> 10))
-		setmirror(MI_0 + (V >> 7));
+	if (PPUCHRBus == (A >> 10) && m != TKSLastMir) {
+		TKSLastMir = m;
+		setmirror(MI_0 + m);
+	}
 }
 
 /* ---------------------------- Mapper 119 ------------------------------ */
@@ -1613,7 +1622,9 @@ void TLSROM_Init(CartInfo *info) {
 	cwrap = TKSWRAP;
 	mwrap = GENNOMWRAP;
 	PPU_hook = TKSPPU;
+	TKSLastMir = 0xFF;
 	AddExState(&PPUCHRBus, 1, 0, "PPUC");
+	AddExState(&TKSLastMir, 1, 0, "TKLM");
 }
 
 void TKSROM_Init(CartInfo *info) {
@@ -1621,7 +1632,9 @@ void TKSROM_Init(CartInfo *info) {
 	cwrap = TKSWRAP;
 	mwrap = GENNOMWRAP;
 	PPU_hook = TKSPPU;
+	TKSLastMir = 0xFF;
 	AddExState(&PPUCHRBus, 1, 0, "PPUC");
+	AddExState(&TKSLastMir, 1, 0, "TKLM");
 }
 
 void TQROM_Init(CartInfo *info) {
