@@ -1,157 +1,176 @@
-# Retro-Go SD template — one project = one CORE or one GWHB homebrew.
+# Nintendo Entertainment System (FCEUmm) — standalone Retro-Go SD core.
 #
-#   make                  — build + pack (default: PROJECT_KIND=core)
-#   make PROJECT_KIND=homebrew
-#   make host             — Linux/macOS SDL binary (same src/main.c)
-#   make host HOST_SDL=3  — same with SDL3
+#   make                  — build + pack → nes.bin (+ nes_fceumm_mappers/)
 #   make docker           — same build inside Docker (no host toolchain)
 #   make docker_shell     — interactive shell in the builder image
 #
-# Customize CORE_NAME / pack metadata below, then replace src/main.c.
-# Verbose compiler lines: make V=
+# Layout: 48 KiB mapper window at __RAM_EMU_START__ (runtime load from
+# /cores/nes_fceumm_mappers/mappers.pak). Hot CPU/PPU/sound .text lives in
+# ITCM; FCEU heap data uses RAM_EMU (ram_calloc); WRAM/CHR-RAM use DTCM.
+# BUILD_DIR must stay `build`: ld/nes_core.ld names objects as build/*.o.
 
 #######################################
 # Project identity
 #######################################
-# core     → pack_core.py     → /cores/<name>.bin
-# homebrew → pack_homebrew.py → /homebrews/<name>.bin
 PROJECT_KIND ?= core
 
-CORE_NAME  := example
-CORE_ENTRY := app_main
+CORE_NAME  := nes
+CORE_ENTRY := app_main_nes_fceu
 
+CORE_FCEUMM := src/fceumm
+CORE_PORTING := src/porting
+
+# Engine + shared boards only (sidecars are MAPPER_C_SOURCES below).
 CORE_C_SOURCES := \
-src/main.c
+$(CORE_PORTING)/main_nes_fceu.c \
+$(CORE_PORTING)/nes_i18n.c \
+$(CORE_PORTING)/nes_fceu_mappers.c \
+$(CORE_FCEUMM)/src/cheat.c \
+$(CORE_FCEUMM)/src/fceu-cart.c \
+$(CORE_FCEUMM)/src/fceu-endian.c \
+$(CORE_FCEUMM)/src/fceu-memory.c \
+$(CORE_FCEUMM)/src/fceu-sound.c \
+$(CORE_FCEUMM)/src/fceu-state.c \
+$(CORE_FCEUMM)/src/fceu.c \
+$(CORE_FCEUMM)/src/fds.c \
+$(CORE_FCEUMM)/src/fds_apu.c \
+$(CORE_FCEUMM)/src/filter.c \
+$(CORE_FCEUMM)/src/general.c \
+$(CORE_FCEUMM)/src/ines.c \
+$(CORE_FCEUMM)/src/input.c \
+$(CORE_FCEUMM)/src/md5.c \
+$(CORE_FCEUMM)/src/nsf.c \
+$(CORE_FCEUMM)/src/palette.c \
+$(CORE_FCEUMM)/src/ppu.c \
+$(CORE_FCEUMM)/src/video.c \
+$(CORE_FCEUMM)/src/x6502.c \
+$(CORE_FCEUMM)/src/boards/mmc3.c \
+$(CORE_FCEUMM)/src/boards/latch.c \
+$(CORE_FCEUMM)/src/boards/vrcirq.c \
+$(CORE_FCEUMM)/src/boards/eeprom_93C66.c \
+$(CORE_FCEUMM)/src/boards/fceu-emu2413.c
 
-# Relative path so Docker bind-mounts work (do NOT use $(abspath) — it
-# bakes the host path into Make prerequisites / .d files). Do not name
-# this SDK_ROOT: that env var is commonly set by Android SDK installs.
+CORE_C_INCLUDES := \
+-I$(CORE_FCEUMM)/src \
+-I$(CORE_PORTING)
+
+# Relative path so Docker bind-mounts work (do NOT use $(abspath)).
 GNW_CORE_SDK ?= sdk
-# Separate build trees so switching PROJECT_KIND does not reuse stale .o.
-BUILD_DIR ?= build/$(PROJECT_KIND)
-
-#######################################
-# SDK bridge overrides (optional)
-#######################################
-# The SDK bridge (gw_core_bridge.c) provides default implementations for
-# memcpy/memset/memmove/__aeabi_mem* and malloc/calloc/free/realloc.
-# Define these to exclude the SDK versions and supply your own:
-#
-#   GW_CORE_BRIDGE_DISABLE_SDK_MEMCPY — exclude memcpy only.
-#       Memmove stays routed through the SDK bridge (Doom/fastmem needs it).
-#
-#   GW_CORE_BRIDGE_DISABLE_SDK_MEMSET — exclude memset only.
-#
-#   GW_CORE_BRIDGE_DISABLE_SDK_MEMMOVE — exclude memmove too (requires your
-#       core to provide memmove).
-#
-#   GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS — back-compat: exclude the full memops
-#       block (memcpy/memset/memmove + all __aeabi_mem* helpers).
-#
-#   GW_CORE_BRIDGE_DISABLE_SDK_MALLOC — exclude the malloc/calloc/free/
-#       realloc wrappers that forward to the firmware ABI heap. Use this when
-#       the core links its own allocator or needs a custom malloc/free path.
-#
-# To enable, add the define(s) to CORE_C_DEFS below, e.g.:
-#   CORE_C_DEFS += -DGW_CORE_BRIDGE_DISABLE_SDK_MEMCPY
-#   CORE_C_DEFS += -DGW_CORE_BRIDGE_DISABLE_SDK_MEMSET
-#   CORE_C_DEFS += -DGW_CORE_BRIDGE_DISABLE_SDK_MALLOC
+# Must match EXCLUDE_FILE / .core_itcm paths in ld/nes_core.ld.
+BUILD_DIR ?= build
 
 #######################################
 # Kind-specific compile defs + packing
 #######################################
 ifeq ($(PROJECT_KIND),core)
-# Match release-firmware layout of retro_emulator_file_t: COVERFLOW fields
-# sit before cheat_* — CHEAT_CODES alone with COVERFLOW=0 misaligns pointers.
-# MAX_CHEAT_CODES mirrors Makefile.common's release default.
+# FCEU_* / VIDEO_RGB565 / __LIBRETRO__: match firmware nes_fceu C_DEFS.
+# COVERFLOW+CHEAT_CODES must match firmware ACTIVE_FILE layout.
 CORE_C_DEFS := \
 -DPROJECT_KIND_CORE=1 \
+-DTARGET_GNW \
+-DFCEU_VERSION_NUMERIC=9813 \
+-DFCEU_LOW_RAM \
+-DFCEU_NO_MALLOC \
+-DVIDEO_RGB565 \
+-D__LIBRETRO__ \
 -DCOVERFLOW=1 \
 -DCHEAT_CODES=1 \
 -DMAX_CHEAT_CODES=13
 
 PACKED_BIN  := $(CORE_NAME).bin
-PAD_LOGO    := src/assets/pad.png
-HEADER_LOGO := src/assets/header.png
+PAD_LOGO    := src/assets/pad.bmp
+HEADER_LOGO := src/assets/header.bmp
 
-else ifeq ($(PROJECT_KIND),homebrew)
-CORE_C_DEFS := \
--DPROJECT_KIND_HOMEBREW=1
-
-PACKED_BIN := ExampleHB.bin
-HB_NAME    := Example Homebrew
-# Compact coverflow tile (HW max is 186x100 — do not use full width by default).
-COVER_JPG    := $(BUILD_DIR)/cover.jpg
-COVER_WIDTH  ?= 128
-COVER_HEIGHT ?= 96
+CORE_LDSCRIPT := ld/nes_core.ld
+CORE_EXTRA_SEGMENTS := itcm:core_itcm
+# nsf.c DrawNSF uses sin/cos/atan/sqrt once.
+CORE_LDLIBS := -lm
 
 else
-$(error PROJECT_KIND must be 'core' or 'homebrew' (got '$(PROJECT_KIND)'))
+$(error PROJECT_KIND must be 'core' (got '$(PROJECT_KIND)'))
 endif
 
 include $(GNW_CORE_SDK)/Makefile
 
-PACK_CORE     := $(GNW_CORE_SDK)/tools/pack_core.py
-PACK_HOMEBREW := $(GNW_CORE_SDK)/tools/pack_homebrew.py
-GEN_COVER     := scripts/gen_homebrew_cover.py
+# Upstream fceumm has a few intentional paren/sequence-point patterns.
+CFLAGS += -Wno-sequence-point -Wno-parentheses
+
+PACK_CORE := $(GNW_CORE_SDK)/tools/pack_core.py
 
 #######################################
 # Packed header version
 #######################################
-# gnw_core_meta_t / gwhb_meta_t only store major.minor.patch (0..255).
-# CORE_VERSION is the full git describe string passed to the packers; they
-# extract the leading vX.Y.Z (NOTAG / missing tags → 0.0.0).
-# Override: make CORE_VERSION=v1.2.3
 CORE_VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo NOTAG)
+
+#######################################
+# Mapper sidecars
+#######################################
+MAPPER_IGNORE := __% fceu-emu2413.c mmc3.c latch.c vrcirq.c eeprom_93C66.c
+MAPPER_C_SOURCES := $(filter-out $(addprefix $(CORE_FCEUMM)/src/boards/,$(MAPPER_IGNORE)), \
+	$(wildcard $(CORE_FCEUMM)/src/boards/*.c))
+
+MAPPER_OBJECTS := $(addprefix $(BUILD_DIR)/,$(notdir $(MAPPER_C_SOURCES:.c=.o)))
+MAPPER_STEMS := $(subst -,_,$(notdir $(basename $(MAPPER_C_SOURCES))))
+MAPPERS_OUT := nes_fceumm_mappers
+MAPPER_BINS := $(addprefix $(MAPPERS_OUT)/mapper_,$(addsuffix .bin,$(MAPPER_STEMS)))
+MAPPERS_PACK := $(MAPPERS_OUT)/mappers.pak
+INES_CORRECT := $(MAPPERS_OUT)/ines_correct.bin
+MAPPER_OVERLAYS_LD := $(BUILD_DIR)/nes_mapper_overlays.ld
+
+vpath %.c $(CORE_FCEUMM)/src/boards
+
+$(MAPPERS_OUT):
+	$(V)mkdir -p $(MAPPERS_OUT)
+
+$(MAPPER_OVERLAYS_LD): scripts/gen_nes_mapper_overlays_ld.py $(MAPPER_C_SOURCES) | $(BUILD_DIR)
+	$(V)python3 scripts/gen_nes_mapper_overlays_ld.py \
+		--boards-dir $(CORE_FCEUMM)/src/boards \
+		--objects-dir $(BUILD_DIR) \
+		--output $@
+
+# Mapper objects on the link line; overlay ld before link.
+$(TARGET_ELF): $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(MAPPER_OBJECTS) $(MAPPER_OVERLAYS_LD) $(CORE_LDSCRIPT)
+	$(V)$(ECHO) [ LD ] $(notdir $@)
+	$(V)$(CC) $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(MAPPER_OBJECTS) $(LDFLAGS) -o $@
+	$(V)$(SZ) $@
+
+define NES_MAPPER_BIN_RULE
+$(MAPPERS_OUT)/mapper_$(subst -,_,$(notdir $(basename $(1)))).bin: $(TARGET_ELF) | $(MAPPERS_OUT)
+	$$(V)$$(CP) -O binary --only-section=.overlay_nes_mapper_$(subst -,_,$(notdir $(basename $(1)))) $$(TARGET_ELF) $$@
+endef
+$(foreach src,$(MAPPER_C_SOURCES),$(eval $(call NES_MAPPER_BIN_RULE,$(src))))
+
+$(MAPPERS_PACK): $(MAPPER_BINS) scripts/gen_mappers_pack.py $(CORE_FCEUMM)/gen_mappers_table.py | $(MAPPERS_OUT)
+	$(V)python3 scripts/gen_mappers_pack.py \
+		--bins-dir $(MAPPERS_OUT) \
+		--output $@ \
+		--repo .
+
+$(INES_CORRECT): $(CORE_FCEUMM)/gen_ines_database.py $(CORE_FCEUMM)/src/ines-correct.h | $(MAPPERS_OUT)
+	$(V)python3 $(CORE_FCEUMM)/gen_ines_database.py $@
 
 #######################################
 # Pack
 #######################################
-.PHONY: pack cover
+.PHONY: pack
 
-ifeq ($(PROJECT_KIND),core)
-
-pack: $(TARGET_BIN) $(PAD_LOGO) $(HEADER_LOGO)
+pack: $(TARGET_BIN) $(BUILD_DIR)/$(CORE_NAME)_core_itcm.bin $(PAD_LOGO) $(HEADER_LOGO) $(MAPPERS_PACK) $(INES_CORRECT)
 	$(V)$(ECHO) [ PACK CORE ] $(PACKED_BIN) version=$(CORE_VERSION)
 	$(V)python3 $(PACK_CORE) \
 		--elf $(TARGET_ELF) --bin $(TARGET_BIN) \
-		--system-name "Example Core" --dirname example \
-		--extensions "bin" \
-		--core-name "Example" \
-		--version "$(CORE_VERSION)" \
+		--system-name "Nintendo Entertainment System" --dirname nes \
+		--extensions "nes fds nsf" \
 		--cheat-ext ggcodes \
 		--pad-logo $(PAD_LOGO) \
 		--header-logo $(HEADER_LOGO) \
+		--logo-invert \
+		--segment itcm:__ITCM_CORE_START__:__CORE_ITCM_CODE_END__:__CORE_ITCM_BSS_END__:$(BUILD_DIR)/$(CORE_NAME)_core_itcm.bin \
+		--core-name "FCEUmm" \
+		--version "$(CORE_VERSION)" \
 		--out $(PACKED_BIN)
-
-else
-
-.PHONY: cover
-cover: $(COVER_JPG)
-
-# Must stay ≤ gui.c COVER_MAX_WIDTH x COVER_MAX_HEIGHT (186x100) and
-# COVER_SIZE (10 KiB) — oversized covers smash the HW JPEG scratch.
-$(COVER_JPG): $(GEN_COVER)
-	$(V)$(ECHO) [ COVER ] $(COVER_JPG) ($(COVER_WIDTH)x$(COVER_HEIGHT))
-	$(V)python3 $(GEN_COVER) \
-		--out $(COVER_JPG) \
-		--title "$(HB_NAME)" \
-		--width $(COVER_WIDTH) \
-		--height $(COVER_HEIGHT)
-
-pack: $(TARGET_BIN) $(COVER_JPG)
-	$(V)$(ECHO) [ PACK GWHB ] $(PACKED_BIN) version=$(CORE_VERSION)
-	$(V)python3 $(PACK_HOMEBREW) \
-		--elf $(TARGET_ELF) --bin $(TARGET_BIN) \
-		--name "$(HB_NAME)" --version "$(CORE_VERSION)" \
-		--cover $(COVER_JPG) \
-		--out $(PACKED_BIN)
-
-endif
 
 all: pack
 
-# Read-only helpers for CI / scripts (make print-PROJECT_KIND, etc.).
 .PHONY: print-PROJECT_KIND print-PACKED_BIN print-CORE_NAME print-DOCKER_IMAGE \
 	print-TARGET_ELF print-TARGET_MAP print-CORE_VERSION
 print-PROJECT_KIND:
@@ -171,12 +190,10 @@ print-CORE_VERSION:
 
 clean::
 	$(V)rm -f $(PACKED_BIN)
-ifeq ($(PROJECT_KIND),homebrew)
-	$(V)rm -f $(COVER_JPG)
-endif
+	$(V)rm -rf $(MAPPERS_OUT)
 
 #######################################
-# Docker (same image as firmware repo)
+# Docker
 #######################################
 .PHONY: docker docker_pull docker_shell
 
@@ -185,7 +202,6 @@ DOCKER_REPOSITORY ?= sylverb/retro-go-sd-builder
 DOCKER_IMAGE ?= $(DOCKER_REPOSITORY):$(RELEASE_VERSION)
 
 DOCKER_TTY_FLAG := $(shell if [ -t 0 ]; then echo -it; else echo; fi)
-# Host UID so build/ artifacts are not root-owned on the bind mount.
 DOCKER_USER := $(shell id -u):$(shell id -g)
 DOCKER_RUN := docker run --rm $(DOCKER_TTY_FLAG) \
 	--user $(DOCKER_USER) \
@@ -193,8 +209,6 @@ DOCKER_RUN := docker run --rm $(DOCKER_TTY_FLAG) \
 	-w /opt/workdir \
 	$(DOCKER_IMAGE)
 
-# Compile inside the published builder image (uses the local copy).
-# Refresh with `make docker_pull` when you want a newer digest for the tag.
 docker:
 	$(V)$(ECHO) "[ DOCKER ]" $(DOCKER_IMAGE) "PROJECT_KIND=$(PROJECT_KIND)"
 	$(V)$(DOCKER_RUN) make --no-print-directory -j$$(nproc) PROJECT_KIND=$(PROJECT_KIND)
@@ -203,11 +217,10 @@ docker_pull:
 	$(V)$(ECHO) "[ PULL ]" $(DOCKER_IMAGE)
 	$(V)docker pull $(DOCKER_IMAGE)
 
-# Interactive shell with the same image / mount as `make docker`.
 docker_shell:
 	$(DOCKER_RUN) bash
 
 #######################################
-# Host SDL (Linux / macOS)
+# Host SDL (optional; mapper overlays not fully mirrored)
 #######################################
 include host/Makefile.host

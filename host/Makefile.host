@@ -42,6 +42,7 @@ HOST_DEFS := \
 	-DHOST_BUILD=1 \
 	-DHOST_SDL=$(HOST_SDL) \
 	-DHOST_SCALE=$(HOST_SCALE) \
+	-DHOST_APP_MAIN=$(CORE_ENTRY) \
 	-DSDL_MAIN_HANDLED=1 \
 	-DIS_LITTLE_ENDIAN \
 	-DGNW_DISABLE_COMPRESSION \
@@ -57,18 +58,24 @@ HOST_INCLUDES := \
 	-I$(HOST_INC_ROOT)/Core/Src/porting/lib \
 	-I$(HOST_INC_ROOT)/Core/Src/porting/lib/FatFs \
 	-I$(HOST_INC_ROOT)/retro-go-stm32/components/odroid \
+	$(CORE_C_INCLUDES) \
 	$(HOST_PKG_CFLAGS)
 
 HOST_CFLAGS := -O2 -g -Wall -Wextra -std=c11 \
 	-include host/stubs/config.h \
 	$(HOST_DEFS) $(HOST_INCLUDES)
 
+# Sidecar mapper boards are VMA overlays on device; host links them normally so
+# ines.o's bmap resolves every *_Init symbol.
 HOST_SRCS := \
 	$(CORE_C_SOURCES) \
+	$(MAPPER_C_SOURCES) \
 	host/host_main.c \
 	host/host_platform.c \
 	host/host_emu.c \
 	host/host_i18n.c
+
+HOST_LDLIBS ?= $(CORE_LDLIBS)
 
 HOST_OBJS := $(addprefix $(HOST_BUILD_DIR)/,$(HOST_SRCS:.c=.o))
 HOST_DEPS := $(HOST_OBJS:.o=.d)
@@ -80,7 +87,7 @@ host: $(HOST_BIN)
 
 $(HOST_BIN): $(HOST_OBJS)
 	$(V)$(ECHO) [ LD HOST ] $@
-	$(V)$(HOST_CC) -o $@ $(HOST_OBJS) $(HOST_PKG_LIBS)
+	$(V)$(HOST_CC) -o $@ $(HOST_OBJS) $(HOST_PKG_LIBS) $(HOST_LDLIBS)
 
 # Explicit pattern under HOST_BUILD_DIR only (do not collide with sdk ARM rules).
 $(HOST_BUILD_DIR)/src/%.o: src/%.c

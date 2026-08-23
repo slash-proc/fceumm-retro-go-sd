@@ -23,6 +23,10 @@ void gw_core_bridge_init(void);
 void host_set_rom_path(const char *path);
 int host_poll_events(void); /* returns 0 if the window should quit */
 
+/* Map a firmware SD absolute path ("/roms/nes/foo.nes") onto the host
+ * filesystem. Prefix with $HOST_SD when set (SD card root mirror). */
+int host_map_sd_path(const char *sd_path, char *out, size_t out_sz);
+
 #ifdef __cplusplus
 }
 #endif

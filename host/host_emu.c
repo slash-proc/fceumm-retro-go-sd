@@ -20,8 +20,10 @@
 #include "odroid_system.h"
 #include "odroid_overlay.h"
 #include "odroid_settings.h"
+#include "odroid_display.h"
 #include "odroid_input.h"
 #include "odroid_audio.h"
+#include "rg_storage.h"
 #include "common.h"
 #include "rom_manager.h"
 #include "main.h"
@@ -78,6 +80,33 @@ static const int host_default_slot = 0;
 
 bool odroid_system_emu_load_state(int slot);
 bool odroid_system_emu_save_state(int slot);
+
+int host_map_sd_path(const char *sd_path, char *out, size_t out_sz)
+{
+    const char *root;
+
+    if (!sd_path || !sd_path[0] || !out || out_sz == 0)
+        return -1;
+
+    root = getenv("HOST_SD");
+    if (root && root[0]) {
+        size_t root_len = strlen(root);
+        while (root_len > 0 && (root[root_len - 1] == '/' || root[root_len - 1] == '\\'))
+            root_len--;
+        if (sd_path[0] == '/' || sd_path[0] == '\\')
+            snprintf(out, out_sz, "%.*s%s", (int)root_len, root, sd_path);
+        else
+            snprintf(out, out_sz, "%.*s/%s", (int)root_len, root, sd_path);
+        return 0;
+    }
+
+    /* No HOST_SD: treat leading '/' as relative to cwd (./roms/...). */
+    if (sd_path[0] == '/' || sd_path[0] == '\\')
+        snprintf(out, out_sz, ".%s", sd_path);
+    else
+        snprintf(out, out_sz, "%s", sd_path);
+    return 0;
+}
 
 /* Tiny 8x8 font for ASCII 32..127 (bit0 = left). */
 static const uint8_t font8x8_basic[96][8] = {
@@ -619,21 +648,63 @@ void odroid_overlay_alert(const char *text) { (void)text; }
 uint8_t *odroid_overlay_cache_file_in_flash(const char *file_path, uint32_t *file_size_p,
                                             bool byte_swap)
 {
-    (void)file_path;
+    FILE *f;
+    long sz;
+    uint8_t *buf;
+    size_t n;
+    char mapped[1024];
+    const char *open_path = file_path;
+
     (void)byte_swap;
     if (file_size_p)
         *file_size_p = 0;
-    return NULL;
+    if (!file_path || !file_path[0])
+        return NULL;
+    if ((file_path[0] == '/' || file_path[0] == '\\') &&
+        host_map_sd_path(file_path, mapped, sizeof(mapped)) == 0)
+        open_path = mapped;
+    f = fopen(open_path, "rb");
+    if (!f)
+        return NULL;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    sz = ftell(f);
+    if (sz <= 0) {
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
+    buf = (uint8_t *)malloc((size_t)sz);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+    n = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    if (n != (size_t)sz) {
+        free(buf);
+        return NULL;
+    }
+    if (file_size_p)
+        *file_size_p = (uint32_t)sz;
+    return buf;
 }
 
 size_t odroid_overlay_cache_file_in_ram(const char *file_path, uint8_t *dest_address)
 {
     FILE *f;
     size_t n;
+    char mapped[1024];
+    const char *open_path = file_path;
 
     if (!file_path || !dest_address)
         return 0;
-    f = fopen(file_path, "rb");
+    if ((file_path[0] == '/' || file_path[0] == '\\') &&
+        host_map_sd_path(file_path, mapped, sizeof(mapped)) == 0)
+        open_path = mapped;
+    f = fopen(open_path, "rb");
     if (!f)
         return 0;
     n = fread(dest_address, 1, host_active_file.size ? host_active_file.size : ram_get_free_size(), f);
@@ -726,6 +797,91 @@ void odroid_system_get_save_path(char *path, size_t size, int slot)
     if (slot < 0)
         slot = 0;
     snprintf(path, size, "host_saves/%s.slot%d.sav", stem, slot);
+}
+
+/* Caller frees (see main_nes_fceu SRAM load/save). */
+char *odroid_system_get_path(emu_path_type_t type, const char *romPath)
+{
+    char *path = (char *)malloc(512);
+    char stem[64];
+    const char *name = romPath;
+
+    if (!path)
+        return NULL;
+    if (name && name[0]) {
+        const char *base = strrchr(name, '/');
+#ifdef _WIN32
+        const char *base2 = strrchr(name, '\\');
+        if (base2 && (!base || base2 > base))
+            base = base2;
+#endif
+        name = base ? base + 1 : name;
+    } else if (ACTIVE_FILE && ACTIVE_FILE->name[0]) {
+        name = ACTIVE_FILE->name;
+    } else {
+        name = "host";
+    }
+    host_sanitize_stem(stem, sizeof(stem), name);
+
+    switch (type) {
+    case ODROID_PATH_SAVE_SRAM:
+        snprintf(path, 512, "host_saves/%s.sram", stem);
+        break;
+    case ODROID_PATH_SAVE_STATE:
+    case ODROID_PATH_SAVE_STATE_1:
+        snprintf(path, 512, "host_saves/%s.slot0.sav", stem);
+        break;
+    case ODROID_PATH_SAVE_STATE_2:
+        snprintf(path, 512, "host_saves/%s.slot1.sav", stem);
+        break;
+    case ODROID_PATH_SAVE_STATE_3:
+        snprintf(path, 512, "host_saves/%s.slot2.sav", stem);
+        break;
+    default:
+        snprintf(path, 512, "host_saves/%s.path%d", stem, (int)type);
+        break;
+    }
+    return path;
+}
+
+odroid_display_scaling_t odroid_display_get_scaling_mode(void)
+{
+    return ODROID_DISPLAY_SCALING_FIT;
+}
+
+odroid_display_filter_t odroid_display_get_filter_mode(void)
+{
+    return ODROID_DISPLAY_FILTER_OFF;
+}
+
+uint8_t odroid_settings_cpu_oc_level_get(void)
+{
+    return 2;
+}
+
+size_t rg_storage_copy_file_range_to_ram(char *file_path, uint8_t *ram_dest,
+                                         uint32_t offset, uint32_t length,
+                                         file_progress_cb_t file_progress_cb)
+{
+    char mapped[1024];
+    FILE *f;
+    size_t n;
+
+    (void)file_progress_cb;
+    if (!file_path || !ram_dest || length == 0)
+        return 0;
+    if (host_map_sd_path(file_path, mapped, sizeof(mapped)) != 0)
+        return 0;
+    f = fopen(mapped, "rb");
+    if (!f)
+        return 0;
+    if (fseek(f, (long)offset, SEEK_SET) != 0) {
+        fclose(f);
+        return 0;
+    }
+    n = fread(ram_dest, 1, length, f);
+    fclose(f);
+    return n;
 }
 
 static int host_ensure_save_dir(void)

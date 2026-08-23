@@ -362,10 +362,12 @@ In this repo after a firmware change:
 ## Existing binaries in this tree
 
 
-| Path     | Notes                                                                 |
-| -------- | --------------------------------------------------------------------- |
-| `src/main.c` | Shared CORE / GWHB skeleton (`PROJECT_KIND_*`); LCD + audio beep demo |
+| Path | Notes |
+| ---- | ----- |
+| `src/porting/main_nes_fceu.c` | NES entry, blit, audio, saves, cheats, menus |
+| `src/fceumm/` | FCEUmm engine + boards (sidecars → `nes_fceumm_mappers/`) |
+| `ld/nes_core.ld` | 48 KiB mapper window + ITCM hot code (`x6502`/`ppu`/`fceu-sound`) |
 
 
-Start from `src/main.c` when placing WRAM / heaps / interpreters; use the
-memory map above for ITCM / DTCM / AHB / RAM_EMU choices.
+Memory policy: ITCM = hot `.text` only; DTCM = WRAM/CHR via `dtc_calloc`;
+FCEU heap via `ram_calloc` (RAM_EMU). Do not put data in ITCM.

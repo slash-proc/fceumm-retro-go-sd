@@ -12,7 +12,13 @@
 #define HOST_SCALE 2
 #endif
 
-extern void app_main(uint8_t load_state, uint8_t start_paused, int8_t save_slot);
+/* Projects may use a custom CORE_ENTRY (e.g. app_main_nes_fceu); Makefile.host
+ * passes -DHOST_APP_MAIN=$(CORE_ENTRY). Template default remains app_main. */
+#ifndef HOST_APP_MAIN
+#define HOST_APP_MAIN app_main
+#endif
+
+extern int HOST_APP_MAIN(uint8_t load_state, uint8_t start_paused, int8_t save_slot);
 
 int main(int argc, char **argv)
 {
@@ -40,8 +46,8 @@ int main(int argc, char **argv)
     if (rom)
         printf("host: ROM %s\n", rom);
 
-    app_main(0, 0, -1);
+    int rc = HOST_APP_MAIN(0, 0, -1);
 
     host_platform_shutdown();
-    return 0;
+    return rc != 0 ? 1 : 0;
 }
