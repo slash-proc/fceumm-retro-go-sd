@@ -365,7 +365,7 @@ In this repo after a firmware change:
 | Path | Notes |
 | ---- | ----- |
 | `src/porting/main_nes_fceu.c` | NES entry, blit, audio, saves, cheats, menus |
-| `src/fceumm/` | FCEUmm engine + boards (sidecars → `nes_fceumm_mappers/`) |
+| `src/fceumm/` | FCEUmm engine + boards (sidecars packed into `fceumm.bin`) |
 | `ld/nes_core.ld` | 48 KiB mapper window + ITCM hot code (`x6502`/`ppu`/`fceu-sound`) |
 
 

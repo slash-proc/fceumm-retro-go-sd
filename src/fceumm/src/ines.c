@@ -269,22 +269,26 @@ struct CHINF {
 
 #ifndef LINUX_EMU
 static int find_correct_rom_info(uint32_t crc32, struct CHINF *moo) {
-    FILE *file = fopen("/cores/nes_fceumm_mappers/ines_correct.bin", "rb");
-    if (!file) {
+    uint32_t base_off = 0;
+    uint32_t blob_size = 0;
+    const char *path = fceumm_assets_ines_path();
+
+    if (!path || !fceumm_assets_ines(&base_off, &blob_size) || blob_size < sizeof(struct CHINF))
         return 0;
-    }
 
-    fseek(file, 0, SEEK_END);
-    long filesize = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    FILE *file = fopen(path, "rb");
+    if (!file)
+        return 0;
 
-    int num_entries = filesize / sizeof(struct CHINF);
+    int num_entries = (int)(blob_size / sizeof(struct CHINF));
     int low = 0, high = num_entries - 1;
 
     while (low <= high) {
         int mid = (low + high) / 2;
-        fseek(file, mid * sizeof(struct CHINF), SEEK_SET);
-        fread(moo, sizeof(struct CHINF), 1, file);
+        if (fseek(file, (long)base_off + (long)mid * (long)sizeof(struct CHINF), SEEK_SET) != 0 ||
+            fread(moo, sizeof(struct CHINF), 1, file) != 1) {
+            break;
+        }
 
         if (moo->crc32 == crc32) {
             fclose(file);

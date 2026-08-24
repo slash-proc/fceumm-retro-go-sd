@@ -6,7 +6,7 @@ Standalone FCEUmm core for
 ## Build
 
 ```bash
-make            # → nes.bin + nes_fceumm_mappers/{mappers.pak,ines_correct.bin}
+make            # → fceumm.bin (CORE + mappers.pak + ines_correct.bin)
 make docker     # same, no host toolchain
 ```
 
@@ -16,9 +16,7 @@ Requires `arm-none-eabi-gcc` (hard-float `fpv5-d16`), Make, Python 3 + Pillow.
 
 | Path | Role |
 |------|------|
-| `/cores/nes.bin` | Packed core |
-| `/cores/nes_fceumm_mappers/mappers.pak` | Runtime mapper overlays |
-| `/cores/nes_fceumm_mappers/ines_correct.bin` | iNES header corrections |
+| `/cores/fceumm.bin` | Packed core + mapper overlays + iNES correction DB |
 | `/roms/nes/*.nes` (also `.fds`, `.nsf`) | ROMs |
 | `/bios/nes/palettes.bin` | Optional palettes |
 

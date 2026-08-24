@@ -1,13 +1,13 @@
 # Nintendo Entertainment System (FCEUmm) — standalone Retro-Go SD core.
 #
-#   make                  — build + pack → nes.bin (+ nes_fceumm_mappers/)
+#   make                  — build + pack → fceumm.bin (core + mappers + ines DB)
 #   make NES_LCD_MODE=lut8|rgb565
 #   make docker           — same build inside Docker (no host toolchain)
 #   make docker_shell     — interactive shell in the builder image
 #
-# Layout: 48 KiB mapper window at __RAM_EMU_START__ (runtime load from
-# /cores/nes_fceumm_mappers/mappers.pak). Hot CPU/PPU/sound .text lives in
-# ITCM; FCEU heap data uses RAM_EMU (ram_calloc); WRAM/CHR-RAM use DTCM.
+# Layout: 48 KiB mapper window at __RAM_EMU_START__ (runtime load from the
+# FCAS trailer inside fceumm.bin). Hot CPU/PPU/sound .text lives in ITCM;
+# FCEU heap data uses RAM_EMU (ram_calloc); WRAM/CHR-RAM use DTCM.
 # BUILD_DIR must stay `build`: ld/nes_core.ld names objects as build/*.o.
 #
 # NES_LCD_MODE (default rgb565): compile-time LCD pixel format — LUT8 frees
@@ -96,7 +96,7 @@ ifneq ($(shell cat $(NES_LCD_STAMP) 2>/dev/null),$(NES_LCD_MODE))
 $(shell mkdir -p $(BUILD_DIR) && echo $(NES_LCD_MODE) > $(NES_LCD_STAMP) && rm -f $(BUILD_DIR)/main_nes_fceu.o)
 endif
 
-PACKED_BIN  := $(CORE_NAME).bin
+PACKED_BIN  := fceumm.bin
 PAD_LOGO    := src/assets/pad.bmp
 HEADER_LOGO := src/assets/header.bmp
 
@@ -187,6 +187,10 @@ pack: $(TARGET_BIN) $(BUILD_DIR)/$(CORE_NAME)_core_itcm.bin $(PAD_LOGO) $(HEADER
 		--core-name "FCEUmm" \
 		--version "$(CORE_VERSION)" \
 		--out $(PACKED_BIN)
+	$(V)python3 scripts/append_fceumm_sidecars.py \
+		--core $(PACKED_BIN) \
+		--mappers $(MAPPERS_PACK) \
+		--ines $(INES_CORRECT)
 
 all: pack
 
@@ -208,7 +212,7 @@ print-CORE_VERSION:
 	@echo $(CORE_VERSION)
 
 clean::
-	$(V)rm -f $(PACKED_BIN)
+	$(V)rm -f $(PACKED_BIN) nes.bin
 	$(V)rm -rf $(MAPPERS_OUT)
 
 #######################################
