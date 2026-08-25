@@ -320,10 +320,10 @@ void *lcd_get_inactive_buffer(void)
     return active_framebuffer ? framebuffer1 : framebuffer2;
 }
 
-void lcd_setup_framebuffers(int lcd_mode)
+void lcd_setup_framebuffers(lcd_mode_t mode)
 {
-    host_lcd_mode = lcd_mode;
-    if (lcd_mode == LCD_MODE_LUT8) {
+    host_lcd_mode = (int)mode;
+    if (mode == LCD_MODE_LUT8) {
         framebuffer1 = (pixel_t *)lut8_fb_storage[0];
         framebuffer2 = (pixel_t *)lut8_fb_storage[1];
     } else {
