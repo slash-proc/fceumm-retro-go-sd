@@ -30,6 +30,7 @@ extern const gw_i18n_entry_t nes_i18n_fds_bios_missing[];
 extern const gw_i18n_entry_t nes_i18n_fds_bios_path[];
 extern const gw_i18n_entry_t nes_i18n_mapper_unsupported[];
 extern const gw_i18n_entry_t nes_i18n_mapper_overlay_missing[];
+extern const gw_i18n_entry_t nes_i18n_nsf_too_large[];
 
 #ifdef __cplusplus
 }

@@ -43,6 +43,9 @@
 #include <odroid_system.h>
 #include "gw_linker.h"
 #endif
+#ifdef TARGET_GNW
+#include "nes_fatal.h"
+#endif
 
 
 #ifndef M_PI
@@ -135,19 +138,71 @@ void NSFGI(int h) {
 
 /* First 32KB is reserved for sound chip emulation in the iNES mapper code. */
 
+#ifdef TARGET_GNW
+/* Raw NSF payload (file bytes after the 128-byte header). Not bank-padded —
+ * may live in QSPI flash for large files. Banks are paged 4 KiB at a time. */
+static const uint8 *NSFRom = 0;
+/* Non-FDS: 8×4 KiB window mapped at $8000-$FFFF. FDS path uses ExWRAM only. */
+#define NSF_PAGE_BYTES  (8 * 4096)
+#endif
+
+static void nsf_fill_bank(uint8 *dst, uint32 bank)
+{
+	uint32 bank_base, load_off, start, end, data_end;
+
+	bank &= (uint32)NSFMaxBank;
+	bank_base = bank << 12;
+	load_off = (uint32)(LoadAddr & 0xfff);
+	memset(dst, 0, 4096);
+
+#ifdef TARGET_GNW
+	if (!NSFRom || NSFSize <= 0)
+		return;
+	data_end = load_off + (uint32)NSFSize;
+	start = bank_base < load_off ? load_off : bank_base;
+	end = bank_base + 4096;
+	if (end > data_end)
+		end = data_end;
+	if (start < end)
+		memcpy(dst + (start - bank_base), NSFRom + (start - load_off), end - start);
+#else
+	if (!NSFDATA)
+		return;
+	memcpy(dst, NSFDATA + bank_base, 4096);
+#endif
+}
+
 static INLINE void BANKSET(uint32 A, uint32 bank) {
 	bank &= NSFMaxBank;
-	if (NSFHeader.SoundChip & 4)
-		memcpy(ExWRAM + (A - 0x6000), NSFDATA + (bank << 12), 4096);
-	else
+	if (NSFHeader.SoundChip & 4) {
+		nsf_fill_bank(ExWRAM + (A - 0x6000), bank);
+	} else {
+#ifdef TARGET_GNW
+		/* Page into the 32 KiB window; setprg4 index = slot 0..7. */
+		if (A >= 0x8000) {
+			uint32 page = (A - 0x8000) >> 12;
+			nsf_fill_bank(NSFDATA + (page << 12), bank);
+			setprg4(A, page);
+		} else {
+			/* Rare: load address below $8000 — put bank in WRAM window. */
+			nsf_fill_bank(ExWRAM + (A - 0x6000), bank);
+		}
+#else
 		setprg4(A, bank);
+#endif
+	}
 }
 
 #ifdef TARGET_GNW
 int NSFLoad(const char *name, const uint8_t *rom, uint32_t rom_size) {
 	int x;
 
-	memcpy(&NSFHeader,rom,0x80);
+	(void)name;
+
+	if (!rom || rom_size < 0x80)
+		return 0;
+
+	memcpy(&NSFHeader, rom, 0x80);
 
 	if (memcmp(NSFHeader.ID, "NESM\x1a", 5))
 		return 0;
@@ -166,21 +221,11 @@ int NSFLoad(const char *name, const uint8_t *rom, uint32_t rom_size) {
 	PlayAddr = NSFHeader.PlayAddressLow;
 	PlayAddr |= NSFHeader.PlayAddressHigh << 8;
 
-	NSFSize = rom_size - 0x80;
+	NSFSize = (int)(rom_size - 0x80);
+	NSFRom = rom + 0x80;
 
 	NSFMaxBank = ((NSFSize + (LoadAddr & 0xfff) + 4095) / 4096);
 	NSFMaxBank = uppow2(NSFMaxBank);
-
-#ifndef FCEU_NO_MALLOC
-	if (!(NSFDATA = (uint8*)FCEU_malloc(NSFMaxBank * 4096)))
-		return 0;
-#else
-	NSFDATA = (uint8*)dtc_malloc(NSFMaxBank * 4096);
-#endif
-
-	memset(NSFDATA, 0x00, NSFMaxBank * 4096);
-	memcpy(NSFDATA + (LoadAddr & 0xfff),rom+0x80,NSFSize);
-
 	NSFMaxBank--;
 
 	BSon = 0;
@@ -225,19 +270,21 @@ int NSFLoad(const char *name, const uint8_t *rom, uint32_t rom_size) {
 	FCEU_printf(" Load address:  $%04x\n Init address:  $%04x\n Play address:  $%04x\n", LoadAddr, InitAddr, PlayAddr);
 	FCEU_printf(" %s\n", (NSFHeader.VideoSystem & 1) ? "PAL" : "NTSC");
 	FCEU_printf(" Starting song:  %d / %d\n\n", NSFHeader.StartingSong, NSFHeader.TotalSongs);
+	FCEU_printf(" Size: %d bytes (%d banks), paged 4KiB\n", NSFSize, NSFMaxBank + 1);
 
-	if (NSFHeader.SoundChip & 4)
-#ifndef FCEU_NO_MALLOC
-	    ExWRAM = (uint8*)FCEU_gmalloc(32768 + 8192);
-#else
-	    ExWRAM = (uint8*)dtc_malloc(32768 + 8192);
-#endif
-	else
-#ifndef FCEU_NO_MALLOC
-	    ExWRAM = (uint8*)FCEU_gmalloc(8192);
-#else
-		ExWRAM = (uint8*)dtc_malloc(8192);
-#endif
+	/* Working RAM only — never mirror the full NSF into RAM_EMU. */
+	if (NSFHeader.SoundChip & 4) {
+		ExWRAM = (uint8*)FCEU_gmalloc(32768 + 8192);
+		NSFDATA = 0;
+	} else {
+		ExWRAM = (uint8*)FCEU_gmalloc(8192);
+		NSFDATA = (uint8*)FCEU_malloc(NSF_PAGE_BYTES);
+	}
+	if (!ExWRAM || (!(NSFHeader.SoundChip & 4) && !NSFDATA)) {
+		nes_load_error_set(NES_LOAD_ERR_NSF_TOO_LARGE,
+			(NSFHeader.SoundChip & 4) ? (40) : (8 + 32));
+		return 0;
+	}
 	return 1;
 }
 #else
@@ -321,9 +368,9 @@ int NSFLoad(FCEUFILE *fp) {
 	FCEU_printf(" Starting song:  %d / %d\n\n", NSFHeader.StartingSong, NSFHeader.TotalSongs);
 
 	if (NSFHeader.SoundChip & 4)
-		ExWRAM = FCEU_gmalloc(32768 + 8192);
+	    ExWRAM = FCEU_gmalloc(32768 + 8192);
 	else
-		ExWRAM = FCEU_gmalloc(8192);
+	    ExWRAM = FCEU_gmalloc(8192);
 	return 1;
 }
 #endif
@@ -362,7 +409,12 @@ void NSF_init(void) {
 		memset(ExWRAM, 0x00, 8192);
 		SetReadHandler(0x6000, 0x7FFF, CartBR);
 		SetWriteHandler(0x6000, 0x7FFF, CartBW);
+#ifdef TARGET_GNW
+		/* 8×4 KiB bank window — full NSF stays in flash/ROM via NSFRom. */
+		SetupCartPRGMapping(0, NSFDATA, NSF_PAGE_BYTES, 0);
+#else
 		SetupCartPRGMapping(0, NSFDATA, ((NSFMaxBank + 1) * 4096), 0);
+#endif
 		SetupCartPRGMapping(1, ExWRAM, 8192, 1);
 		setprg8r(1, 0x6000, 0);
 		SetReadHandler(0x8000, 0xFFFF, CartBR);

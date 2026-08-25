@@ -118,6 +118,11 @@ void nes_fatal_if_load_failed(void *gameInfo)
                  nes_load_err_arg);
         nes_fatal(line1, "");
         break;
+    case NES_LOAD_ERR_NSF_TOO_LARGE:
+        snprintf(line1, sizeof(line1), gw_i18n(nes_i18n_nsf_too_large),
+                 nes_load_err_arg);
+        nes_fatal(line1, "");
+        break;
     case NES_LOAD_ERR_GENERIC:
         if (nes_load_err_detail[0])
             nes_fatal(nes_load_err_detail, "");
@@ -956,7 +961,10 @@ static size_t nes_getromdata(unsigned char **data)
 #endif
 #else
     ram_start = (uint32_t)&__CORE_BSS_END__;
-    if (size > ram_get_free_size()) {
+    /* NSF: always map from flash so 1 MiB (and larger) files leave RAM_EMU
+     * free for the 32 KiB bank window + WRAM. Banks are paged in nsf.c. */
+    if ((ACTIVE_FILE->ext && strcasecmp(ACTIVE_FILE->ext, "nsf") == 0) ||
+        size > ram_get_free_size()) {
         *data = odroid_overlay_cache_file_in_flash(ACTIVE_FILE->path, &size, false);
     } else {
         *data = ram_malloc(size);

@@ -368,3 +368,19 @@ const gw_i18n_entry_t nes_i18n_mapper_overlay_missing[] = {
     GW_I18N_END
 };
 
+const gw_i18n_entry_t nes_i18n_nsf_too_large[] = {
+    { "en", "NSF too large (%d KiB)" },
+    { "fr", "NSF trop gros (%d Kio)" },
+    { "es", "NSF demasiado grande (%d KiB)" },
+    { "pt", "NSF grande demais (%d KiB)" },
+    { "de", "NSF zu groß (%d KiB)" },
+    { "it", "NSF troppo grande (%d KiB)" },
+    { "no", "NSF for stor (%d KiB)" },
+    { "ru", "NSF слишком большой (%d КиБ)" },
+    { "zh_cn", "NSF 过大 (%d KiB)" },
+    { "zh_tw", "NSF 過大 (%d KiB)" },
+    { "ko", "NSF가 너무 큼 (%d KiB)" },
+    { "ja", "NSFが大きすぎます (%d KiB)" },
+    GW_I18N_END
+};
+
