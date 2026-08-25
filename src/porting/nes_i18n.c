@@ -256,3 +256,115 @@ const gw_i18n_entry_t nes_i18n_oc_vblank[] = {
     GW_I18N_END
 };
 
+const gw_i18n_entry_t nes_i18n_error[] = {
+    { "en", "Error" },
+    { "fr", "Erreur" },
+    { "es", "Error" },
+    { "pt", "Erro" },
+    { "de", "Fehler" },
+    { "it", "Errore" },
+    { "no", "Feil" },
+    { "ru", "Ошибка" },
+    { "zh_cn", "错误" },
+    { "zh_tw", "錯誤" },
+    { "ko", "오류" },
+    { "ja", "エラー" },
+    GW_I18N_END
+};
+
+const gw_i18n_entry_t nes_i18n_ok[] = {
+    { "en", "OK" },
+    { "fr", "OK" },
+    { "es", "OK" },
+    { "pt", "OK" },
+    { "de", "OK" },
+    { "it", "OK" },
+    { "no", "OK" },
+    { "ru", "OK" },
+    { "zh_cn", "确定" },
+    { "zh_tw", "確定" },
+    { "ko", "확인" },
+    { "ja", "OK" },
+    GW_I18N_END
+};
+
+const gw_i18n_entry_t nes_i18n_load_failed[] = {
+    { "en", "Failed to load this ROM" },
+    { "fr", "Impossible de charger cette ROM" },
+    { "es", "No se pudo cargar esta ROM" },
+    { "pt", "Falha ao carregar esta ROM" },
+    { "de", "ROM konnte nicht geladen werden" },
+    { "it", "Impossibile caricare questa ROM" },
+    { "no", "Kunne ikke laste denne ROM-en" },
+    { "ru", "Не удалось загрузить ROM" },
+    { "zh_cn", "无法加载此 ROM" },
+    { "zh_tw", "無法載入此 ROM" },
+    { "ko", "이 ROM을 불러오지 못했습니다" },
+    { "ja", "このROMを読み込めません" },
+    GW_I18N_END
+};
+
+const gw_i18n_entry_t nes_i18n_fds_bios_missing[] = {
+    { "en", "FDS BIOS missing" },
+    { "fr", "BIOS FDS introuvable" },
+    { "es", "Falta el BIOS FDS" },
+    { "pt", "BIOS FDS ausente" },
+    { "de", "FDS-BIOS fehlt" },
+    { "it", "BIOS FDS mancante" },
+    { "no", "FDS-BIOS mangler" },
+    { "ru", "Нет BIOS FDS" },
+    { "zh_cn", "缺少 FDS BIOS" },
+    { "zh_tw", "缺少 FDS BIOS" },
+    { "ko", "FDS BIOS 없음" },
+    { "ja", "FDS BIOSがありません" },
+    GW_I18N_END
+};
+
+const gw_i18n_entry_t nes_i18n_fds_bios_path[] = {
+    { "en", "Need /bios/nes/disksys.rom" },
+    { "fr", "Placer /bios/nes/disksys.rom" },
+    { "es", "Falta /bios/nes/disksys.rom" },
+    { "pt", "Precisa /bios/nes/disksys.rom" },
+    { "de", "Benötigt /bios/nes/disksys.rom" },
+    { "it", "Serve /bios/nes/disksys.rom" },
+    { "no", "Trenger /bios/nes/disksys.rom" },
+    { "ru", "Нужен /bios/nes/disksys.rom" },
+    { "zh_cn", "需要 /bios/nes/disksys.rom" },
+    { "zh_tw", "需要 /bios/nes/disksys.rom" },
+    { "ko", "/bios/nes/disksys.rom 필요" },
+    { "ja", "/bios/nes/disksys.rom が必要" },
+    GW_I18N_END
+};
+
+const gw_i18n_entry_t nes_i18n_mapper_unsupported[] = {
+    { "en", "Unsupported mapper #%d" },
+    { "fr", "Mapper #%d non géré" },
+    { "es", "Mapper #%d no soportado" },
+    { "pt", "Mapper #%d não suportado" },
+    { "de", "Mapper #%d nicht unterstützt" },
+    { "it", "Mapper #%d non supportato" },
+    { "no", "Mapper #%d støttes ikke" },
+    { "ru", "Mapper #%d не поддерживается" },
+    { "zh_cn", "不支持 mapper #%d" },
+    { "zh_tw", "不支援 mapper #%d" },
+    { "ko", "지원하지 않는 mapper #%d" },
+    { "ja", "未対応マッパー #%d" },
+    GW_I18N_END
+};
+
+const gw_i18n_entry_t nes_i18n_mapper_overlay_missing[] = {
+    { "en", "Mapper #%d data missing" },
+    { "fr", "Données mapper #%d absentes" },
+    { "es", "Faltan datos del mapper #%d" },
+    { "pt", "Dados do mapper #%d ausentes" },
+    { "de", "Mapper-%d-Daten fehlen" },
+    { "it", "Dati mapper #%d mancanti" },
+    { "no", "Mapper #%d-data mangler" },
+    { "ru", "Нет данных mapper #%d" },
+    { "zh_cn", "缺少 mapper #%d 数据" },
+    { "zh_tw", "缺少 mapper #%d 資料" },
+    { "ko", "mapper #%d 데이터 없음" },
+    { "ja", "マッパー #%d データなし" },
+    GW_I18N_END
+};
+

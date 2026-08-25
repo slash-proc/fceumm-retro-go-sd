@@ -27,16 +27,107 @@
  * this header turns later *uses* into live ABI-pointer accesses. */
 #ifdef HOST_BUILD
 #include "host_compat.h"
+#include <stdlib.h>
 #else
 #include "stm32h7xx.h"
 #include "gw_core_bridge.h"
 #endif
 #include "nes_i18n.h"
+#include "nes_fatal.h"
 
 #define NES_WIDTH  256
 #define NES_HEIGHT 240
 
 extern CartInfo iNESCart;
+
+static nes_load_err_t nes_load_err = NES_LOAD_ERR_NONE;
+static int nes_load_err_arg;
+static char nes_load_err_detail[96];
+
+void nes_load_error_clear(void)
+{
+    nes_load_err = NES_LOAD_ERR_NONE;
+    nes_load_err_arg = 0;
+    nes_load_err_detail[0] = '\0';
+}
+
+void nes_load_error_set(nes_load_err_t code, int arg)
+{
+    /* Keep the first specific reason; later generic prints must not hide it. */
+    if (nes_load_err != NES_LOAD_ERR_NONE && code == NES_LOAD_ERR_GENERIC)
+        return;
+    if (nes_load_err != NES_LOAD_ERR_NONE && nes_load_err != NES_LOAD_ERR_GENERIC)
+        return;
+    nes_load_err = code;
+    nes_load_err_arg = arg;
+}
+
+void __attribute__((noreturn)) nes_fatal(const char *line1, const char *line2)
+{
+    printf("nes: FATAL %s / %s\n", line1 ? line1 : "", line2 ? line2 : "");
+
+    if (line2 && line2[0]) {
+        odroid_dialog_choice_t choices[] = {
+            {0, line1 ? line1 : "", "", -1, NULL},
+            {0, line2, "", -1, NULL},
+            ODROID_DIALOG_CHOICE_SEPARATOR,
+            {1, gw_i18n(nes_i18n_ok), "", 1, NULL},
+            ODROID_DIALOG_CHOICE_LAST,
+        };
+        odroid_overlay_dialog(gw_i18n(nes_i18n_error), choices, 3, NULL, 0);
+    } else {
+        odroid_dialog_choice_t choices[] = {
+            {0, line1 ? line1 : "", "", -1, NULL},
+            ODROID_DIALOG_CHOICE_SEPARATOR,
+            {1, gw_i18n(nes_i18n_ok), "", 1, NULL},
+            ODROID_DIALOG_CHOICE_LAST,
+        };
+        odroid_overlay_dialog(gw_i18n(nes_i18n_error), choices, 2, NULL, 0);
+    }
+
+#ifndef HOST_BUILD
+    NVIC_SystemReset();
+#else
+    exit(1);
+#endif
+}
+
+void nes_fatal_if_load_failed(void *gameInfo)
+{
+    char line1[96];
+
+    if (gameInfo)
+        return;
+
+    switch (nes_load_err) {
+    case NES_LOAD_ERR_FDS_BIOS_MISSING:
+        nes_fatal(gw_i18n(nes_i18n_fds_bios_missing),
+                  gw_i18n(nes_i18n_fds_bios_path));
+        break;
+    case NES_LOAD_ERR_FDS_BIOS_SIZE:
+        nes_fatal(gw_i18n(nes_i18n_fds_bios_missing),
+                  "disksys.rom must be 8 KiB");
+        break;
+    case NES_LOAD_ERR_MAPPER_UNSUPPORTED:
+        snprintf(line1, sizeof(line1), gw_i18n(nes_i18n_mapper_unsupported),
+                 nes_load_err_arg);
+        nes_fatal(line1, "");
+        break;
+    case NES_LOAD_ERR_MAPPER_OVERLAY:
+        snprintf(line1, sizeof(line1), gw_i18n(nes_i18n_mapper_overlay_missing),
+                 nes_load_err_arg);
+        nes_fatal(line1, "");
+        break;
+    case NES_LOAD_ERR_GENERIC:
+        if (nes_load_err_detail[0])
+            nes_fatal(nes_load_err_detail, "");
+        /* fall through */
+    case NES_LOAD_ERR_NONE:
+    default:
+        nes_fatal(gw_i18n(nes_i18n_load_failed), "");
+        break;
+    }
+}
 
 static uint8_t nes_framebuffer[(NES_WIDTH+16)*NES_HEIGHT];
 static bool crop_overscan_v;
@@ -175,6 +266,23 @@ static void apply_palette(uint8_t idx) {
 void FCEUD_PrintError(char *c)
 {
     printf("%s", c);
+    /* Capture first non-empty message as a generic fallback detail. */
+    if (nes_load_err == NES_LOAD_ERR_NONE && c && c[0]) {
+        size_t n = 0;
+        while (c[n] && n + 1 < sizeof(nes_load_err_detail)) {
+            if (c[n] == '\n' || c[n] == '\r')
+                break;
+            nes_load_err_detail[n] = c[n];
+            n++;
+        }
+        nes_load_err_detail[n] = '\0';
+        /* Trim leading spaces from FCEU messages. */
+        while (nes_load_err_detail[0] == ' ')
+            memmove(nes_load_err_detail, nes_load_err_detail + 1,
+                    strlen(nes_load_err_detail));
+        if (nes_load_err_detail[0])
+            nes_load_error_set(NES_LOAD_ERR_GENERIC, 0);
+    }
 }
 
 void FCEUD_DispMessage(enum retro_log_level level, unsigned duration, const char *str)
@@ -1152,8 +1260,10 @@ int app_main_nes_fceu(uint8_t load_state, uint8_t start_paused, int8_t save_slot
     FCEUI_Initialize();
 
     rom_size = nes_getromdata(&rom_data);
+    nes_load_error_clear();
     FCEUGI *gameInfo = FCEUI_LoadGame(ACTIVE_FILE->name, rom_data, rom_size,
                                      NULL);
+    nes_fatal_if_load_failed(gameInfo);
 
     PowerNES();
 

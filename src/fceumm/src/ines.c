@@ -48,6 +48,7 @@
 #include <odroid_system.h>
 #include "gw_linker.h"
 #include "rg_storage.h"
+#include "nes_fatal.h"
 #endif
 #endif
 #include "md5.h"
@@ -1195,6 +1196,9 @@ int iNESLoad(const char *name, const uint8_t *rom, uint32_t rom_size)
       FCEU_printf("\n");
       FCEU_PrintError(" iNES mapper #%d is not supported at all.\n",
             iNESCart.mapper);
+#if !defined(LINUX_EMU)
+      nes_load_error_set(NES_LOAD_ERR_MAPPER_UNSUPPORTED, (int)iNESCart.mapper);
+#endif
       return 0;
    }
 
@@ -1520,6 +1524,17 @@ static int iNES_Init(int num) {
 				FCEU_printf("Loaded %d b of mapper %d in ram\n",mapper_size,num);
 				memset((char *)(&__RAM_EMU_START__) + mapper_size, 0x0, (size_t)(&__RAM_FCEUMM_MAPPER_LENGTH__)-mapper_size);
 				SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, mapper_size);
+			} else {
+				/* Overlay boards are linked into the 48 KiB mapper window; if
+				 * the pak blob is missing, calling init would jump into empty RAM. */
+				uintptr_t init_fn = (uintptr_t)(void *)tmp->init;
+				uintptr_t win_base = (uintptr_t)&__RAM_EMU_START__;
+				uintptr_t win_end = win_base + (uintptr_t)&__RAM_FCEUMM_MAPPER_LENGTH__;
+				if (init_fn >= win_base && init_fn < win_end) {
+					FCEU_PrintError(" iNES mapper #%d overlay missing from pack.\n", num);
+					nes_load_error_set(NES_LOAD_ERR_MAPPER_OVERLAY, num);
+					return 0;
+				}
 			}
 #endif
 			tmp->init(&iNESCart);

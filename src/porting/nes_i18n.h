@@ -23,6 +23,13 @@ extern const gw_i18n_entry_t nes_i18n_insert[];
 extern const gw_i18n_entry_t nes_i18n_fds_side_fmt[];
 extern const gw_i18n_entry_t nes_i18n_oc_postrender[];
 extern const gw_i18n_entry_t nes_i18n_oc_vblank[];
+extern const gw_i18n_entry_t nes_i18n_error[];
+extern const gw_i18n_entry_t nes_i18n_ok[];
+extern const gw_i18n_entry_t nes_i18n_load_failed[];
+extern const gw_i18n_entry_t nes_i18n_fds_bios_missing[];
+extern const gw_i18n_entry_t nes_i18n_fds_bios_path[];
+extern const gw_i18n_entry_t nes_i18n_mapper_unsupported[];
+extern const gw_i18n_entry_t nes_i18n_mapper_overlay_missing[];
 
 #ifdef __cplusplus
 }

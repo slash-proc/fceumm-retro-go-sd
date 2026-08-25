@@ -42,6 +42,7 @@
 #endif
 #if defined(TARGET_GNW) && !defined(LINUX_EMU)
 #include "odroid_overlay.h"
+#include "nes_fatal.h"
 #endif
 
 /*	TODO:  Add code to put a delay in between the time a disk is inserted
@@ -839,10 +840,13 @@ int FDSLoad(const char *name, const char *rom, uint32_t rom_size) {
 	if (bios_data == NULL) {
 		FCEU_PrintError("FDS BIOS ROM image missing!\n");
 		FCEUD_DispMessage(RETRO_LOG_ERROR, 3000, "FDS BIOS image (disksys.rom) missing");
+		nes_load_error_set(NES_LOAD_ERR_FDS_BIOS_MISSING, 0);
 		return 0;
 	} else if (size_u32 != 8192) {
 		FCEU_PrintError("FDS BIOS ROM image wrong size (expecting 8KB file)!\n");
 		FCEUD_DispMessage(RETRO_LOG_ERROR, 3000, "FDS BIOS image (disksys.rom) incorrect");
+		nes_load_error_set(NES_LOAD_ERR_FDS_BIOS_SIZE, 0);
+		return 0;
 	}
 #else
 	FILE *fdsbiosfile = fopen("bios/nes/disksys.rom","r");
