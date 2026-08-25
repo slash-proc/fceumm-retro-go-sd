@@ -1115,7 +1115,11 @@ void FCEUPPU_Power(void) {
 #endif
 
 	memset(NTARAM, 0x00, 0x800);
-	memset(PALRAM, 0x00, 0x20);
+	/* Hardware power-on palette is undefined; upstream zeros it to $00 which
+	 * is medium gray in the default NES palette. Until the game programs
+	 * $0F (black), every blank / rendering-off frame flashes gray on boot.
+	 * Seed with $0F so the first frames stay black. */
+	memset(PALRAM, 0x0F, 0x20);
 	memset(UPALRAM, 0x00, 0x03);
 	memset(SPRAM, 0x00, 0x100);
 	FCEUPPU_Reset();
@@ -1147,7 +1151,10 @@ void FCEUPPU_Power(void) {
 int FCEUPPU_Loop(int skip) {
 	/* Needed for Knight Rider, possibly others. */
 	if (ppudead) {
-		memset(XBuf, 0x80, 256 * 240);
+		/* 0x8F = palette entry $0F (black) with FCEU's high-bit convention.
+		 * Upstream uses 0x80 ($00) which is medium gray (117,117,117) in the
+		 * default palette — a few frames of that flash on G&W boot. */
+		memset(XBuf, 0x8F, 256 * 240);
 		X6502_Run(scanlines_per_frame * (256 + 85));
 		ppudead--;
 	} else {
