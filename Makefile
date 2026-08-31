@@ -69,7 +69,7 @@ BUILD_DIR ?= build
 ifeq ($(PROJECT_KIND),core)
 # FCEU_* / __LIBRETRO__: match firmware nes_fceu C_DEFS.
 # COVERFLOW+CHEAT_CODES must match firmware ACTIVE_FILE layout.
-NES_LCD_MODE ?= rgb565
+NES_LCD_MODE ?= lut8
 ifeq ($(NES_LCD_MODE),lut8)
 NES_LCD_DEF := -DNES_LCD_LUT8=1
 else ifeq ($(NES_LCD_MODE),rgb565)
@@ -105,6 +105,25 @@ CORE_EXTRA_SEGMENTS := itcm:core_itcm
 # nsf.c DrawNSF uses sin/cos/atan/sqrt once.
 CORE_LDLIBS := -lm
 
+#######################################
+# Mapper sidecars (linked into the core ELF as overlays)
+#######################################
+MAPPER_IGNORE := __% fceu-emu2413.c mmc3.c latch.c vrcirq.c eeprom_93C66.c
+MAPPER_C_SOURCES := $(filter-out $(addprefix $(CORE_FCEUMM)/src/boards/,$(MAPPER_IGNORE)), \
+	$(wildcard $(CORE_FCEUMM)/src/boards/*.c))
+
+MAPPER_OBJECTS := $(addprefix $(BUILD_DIR)/,$(notdir $(MAPPER_C_SOURCES:.c=.o)))
+MAPPER_STEMS := $(subst -,_,$(notdir $(basename $(MAPPER_C_SOURCES))))
+MAPPERS_OUT := nes_fceumm_mappers
+MAPPER_BINS := $(addprefix $(MAPPERS_OUT)/mapper_,$(addsuffix .bin,$(MAPPER_STEMS)))
+MAPPERS_PACK := $(MAPPERS_OUT)/mappers.pak
+INES_CORRECT := $(MAPPERS_OUT)/ines_correct.bin
+MAPPER_OVERLAYS_LD := $(BUILD_DIR)/nes_mapper_overlays.ld
+
+# Feed mapper objects into the shared sdk link recipe (no recipe override).
+CORE_EXTRA_OBJECTS := $(MAPPER_OBJECTS)
+CORE_ELF_EXTRA_DEPS := $(MAPPER_OVERLAYS_LD)
+
 else
 $(error PROJECT_KIND must be 'core' (got '$(PROJECT_KIND)'))
 endif
@@ -121,21 +140,6 @@ PACK_CORE := $(GNW_CORE_SDK)/tools/pack_core.py
 #######################################
 CORE_VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo NOTAG)
 
-#######################################
-# Mapper sidecars
-#######################################
-MAPPER_IGNORE := __% fceu-emu2413.c mmc3.c latch.c vrcirq.c eeprom_93C66.c
-MAPPER_C_SOURCES := $(filter-out $(addprefix $(CORE_FCEUMM)/src/boards/,$(MAPPER_IGNORE)), \
-	$(wildcard $(CORE_FCEUMM)/src/boards/*.c))
-
-MAPPER_OBJECTS := $(addprefix $(BUILD_DIR)/,$(notdir $(MAPPER_C_SOURCES:.c=.o)))
-MAPPER_STEMS := $(subst -,_,$(notdir $(basename $(MAPPER_C_SOURCES))))
-MAPPERS_OUT := nes_fceumm_mappers
-MAPPER_BINS := $(addprefix $(MAPPERS_OUT)/mapper_,$(addsuffix .bin,$(MAPPER_STEMS)))
-MAPPERS_PACK := $(MAPPERS_OUT)/mappers.pak
-INES_CORRECT := $(MAPPERS_OUT)/ines_correct.bin
-MAPPER_OVERLAYS_LD := $(BUILD_DIR)/nes_mapper_overlays.ld
-
 vpath %.c $(CORE_FCEUMM)/src/boards
 
 $(MAPPERS_OUT):
@@ -146,12 +150,6 @@ $(MAPPER_OVERLAYS_LD): scripts/gen_nes_mapper_overlays_ld.py $(MAPPER_C_SOURCES)
 		--boards-dir $(CORE_FCEUMM)/src/boards \
 		--objects-dir $(BUILD_DIR) \
 		--output $@
-
-# Mapper objects on the link line; overlay ld before link.
-$(TARGET_ELF): $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(MAPPER_OBJECTS) $(MAPPER_OVERLAYS_LD) $(CORE_LDSCRIPT)
-	$(V)$(ECHO) [ LD ] $(notdir $@)
-	$(V)$(CC) $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(MAPPER_OBJECTS) $(LDFLAGS) -o $@
-	$(V)$(SZ) $@
 
 define NES_MAPPER_BIN_RULE
 $(MAPPERS_OUT)/mapper_$(subst -,_,$(notdir $(basename $(1)))).bin: $(TARGET_ELF) | $(MAPPERS_OUT)
@@ -246,4 +244,5 @@ docker_shell:
 #######################################
 # Host SDL (optional; mapper overlays not fully mirrored)
 #######################################
+HOST_BIN := fceumm_host
 include host/Makefile.host

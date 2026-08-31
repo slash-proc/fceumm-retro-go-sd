@@ -14,10 +14,13 @@ HOST_CC    ?= cc
 
 HOST_BUILD_DIR := build/host/$(PROJECT_KIND)_sdl$(HOST_SDL)
 
+# Project Makefile may set HOST_BIN (e.g. fceumm_host) before including us.
+ifeq ($(HOST_BIN),)
 ifeq ($(PROJECT_KIND),homebrew)
 HOST_BIN := ExampleHB_host
 else
 HOST_BIN := $(CORE_NAME)_host
+endif
 endif
 
 ifeq ($(HOST_SDL),3)
@@ -33,7 +36,9 @@ HOST_PKG_LIBS   := $(shell pkg-config --libs $(HOST_SDL_PC) 2>/dev/null)
 # macOS sdl2.pc pulls -lSDL2main which wants SDL_main; we provide main() ourselves.
 HOST_PKG_LIBS   := $(filter-out -lSDL2main,$(HOST_PKG_LIBS))
 ifeq ($(HOST_PKG_LIBS),)
+ifneq ($(filter host,$(MAKECMDGOALS)),)
 $(warning pkg-config $(HOST_SDL_PC) not found — host link may fail. Install SDL$(HOST_SDL) devel package.)
+endif
 endif
 
 HOST_INC_ROOT := $(GNW_CORE_SDK)/include
@@ -102,7 +107,7 @@ $(HOST_BUILD_DIR)/host/%.o: host/%.c
 
 host_clean:
 	$(V)rm -rf build/host
-	$(V)rm -f $(CORE_NAME)_host ExampleHB_host
+	$(V)rm -f $(HOST_BIN) $(CORE_NAME)_host ExampleHB_host
 
 clean:: host_clean
 

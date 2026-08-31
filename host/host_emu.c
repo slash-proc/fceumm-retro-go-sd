@@ -383,6 +383,16 @@ void lcd_swap(void)
     host_maybe_quit();
 }
 
+uint32_t lcd_is_swap_pending(void)
+{
+    return 0;
+}
+
+bool lcd_sleep_while_swap_pending(void)
+{
+    return false;
+}
+
 void lcd_wait_for_vblank(void)
 {
     host_platform_delay_ms(1);

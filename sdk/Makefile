@@ -11,7 +11,8 @@
 #
 # Optional: CORE_C_INCLUDES, CORE_C_DEFS, CORE_CXX_SOURCES, CORE_ASM_SOURCES,
 #           CORE_ASFLAGS, CORE_EXTRA_REDEFINE_SYMS, CORE_LDSCRIPT, CORE_LDLIBS,
-#           CORE_EXTRA_SEGMENTS, GCC_PATH, OPT
+#           CORE_EXTRA_SEGMENTS, CORE_EXTRA_OBJECTS, CORE_ELF_EXTRA_DEPS,
+#           GCC_PATH, OPT
 #
 # Extra ITCM/AHB segments: if your linker script defines the usual
 # __CORE_ITCM_* / __CORE_AHB_* symbols and .core_itcm / .core_ahb sections,
@@ -33,6 +34,11 @@ BUILD_DIR ?= build
 CORE_LDSCRIPT ?= $(GNW_CORE_SDK)/ld/core_ram_emu.ld
 CORE_ASFLAGS ?=
 CORE_EXTRA_REDEFINE_SYMS ?=
+# Optional extras on the final link line (e.g. NES mapper overlay objects).
+CORE_EXTRA_OBJECTS ?=
+# Extra deps for $(TARGET_ELF) that are not linked as .o (e.g. a generated
+# overlay linker snippet that must exist before link).
+CORE_ELF_EXTRA_DEPS ?=
 
 #######################################
 # toolchain
@@ -191,9 +197,9 @@ $(BUILD_DIR)/%.o: %.cc $(REDEFINE_SYMS_FILE) | $(BUILD_DIR)
 	$(V)$(CP) --redefine-syms=$(REDEFINE_SYMS_FILE) $@
 	$(V)$(call CORE_APPLY_EXTRA_REDEFINE,$@)
 
-$(TARGET_ELF): $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(CORE_LDSCRIPT)
+$(TARGET_ELF): $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(CORE_EXTRA_OBJECTS) $(CORE_ELF_EXTRA_DEPS) $(CORE_LDSCRIPT)
 	$(V)$(ECHO) [ LD ] $(notdir $@)
-	$(V)$(CC) $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(LDFLAGS) -o $@
+	$(V)$(CC) $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(CORE_EXTRA_OBJECTS) $(LDFLAGS) -o $@
 	$(V)$(SZ) $@
 
 $(TARGET_BIN): $(TARGET_ELF)

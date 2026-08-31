@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.0.2]
+
+### Added
+
+- Nothing
+
+### Changed
+
+- Use LUT8 mode instead of RGB565
+
+### Fixed
+
+- Fix for green screen showing randomly
+
 ## [v0.0.1]
 
 ### Added
@@ -8,7 +22,7 @@
 
 ### Changed
 
-- No more grey screen at startuo
+- No more grey screen at startup
 
 ### Fixed
 
@@ -26,13 +40,3 @@ your derived project.
 - Place test ROMs under `/roms/example/` (dirname matches `CORE_NAME` in the
   Makefile).
 - Requires firmware whose ABI matches `SDK_VERSION` in this repository.
-
-**Homebrew (`PROJECT_KIND=homebrew`)**
-
-- Set `PROJECT_KIND=homebrew` in the Makefile, rebuild, then copy
-  `ExampleHB.bin` to `/homebrews/`.
-- Optional coverflow override: `/covers/homebrew/ExampleHB.img` (JPEG ≤186×100,
-  ≤10 KiB).
-
-The release archive contains the ready-to-copy SD layout for the active project
-kind only (`cores/` or `homebrews/`).
