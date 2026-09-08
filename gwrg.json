@@ -1,0 +1,22 @@
+{
+  "$comment": "The hand-written half of this project's manifest. Everything else -- the systems, their folders, extensions and browse mode, the firmware ABI, sizes and hashes -- is derived from the packed core by scripts/make_manifest.py. Nothing derivable belongs here.",
+  "systems": {
+    "nes": {
+      "shortName": "NES",
+      "compression": false,
+      "bios": [
+        {
+          "id": "disksys",
+          "filename": "disksys.rom",
+          "requiredFor": [".fds"],
+          "bytes": 8192,
+          "sha1": "57fe1bdee955bb48d357e463ccbf129496930b62",
+          "label": { "en": "Famicom Disk System BIOS" },
+          "description": {
+            "en": "Required to play .fds disk images. The core refuses to start one without it, and rejects a file that is not exactly 8 KiB. Cartridge (.nes) and music (.nsf) files do not need it."
+          }
+        }
+      ]
+    }
+  }
+}
