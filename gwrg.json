@@ -8,12 +8,27 @@
         {
           "id": "disksys",
           "filename": "disksys.rom",
-          "requiredFor": [".fds"],
+          "requiredFor": [
+            ".fds"
+          ],
           "bytes": 8192,
           "sha1": "57fe1bdee955bb48d357e463ccbf129496930b62",
-          "label": { "en": "Famicom Disk System BIOS" },
+          "label": {
+            "en": "Famicom Disk System BIOS"
+          },
           "description": {
             "en": "Required to play .fds disk images. The core refuses to start one without it, and rejects a file that is not exactly 8 KiB. Cartridge (.nes) and music (.nsf) files do not need it."
+          }
+        },
+        {
+          "id": "palettes",
+          "filename": "palettes.bin",
+          "required": false,
+          "label": {
+            "en": "Custom NES palette pack"
+          },
+          "description": {
+            "en": "Optional. A pack of alternative NES colour palettes, selectable from the in-game options menu. Without it the core uses its built-in default palette and the palette option offers no alternatives; nothing else changes. Each entry is a 288-byte record (a 32-byte name followed by 64 RGB colours)."
           }
         }
       ]
