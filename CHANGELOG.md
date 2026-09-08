@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.1.1] - 2026-09-08
+
+### Added
+
+- The optional custom palette pack is declared as a `bios[]` entry. The core
+  reads `/bios/nes/palettes.bin` for the alternative colour palettes offered in
+  the options menu; without the file `apply_palette()` falls back to the
+  built-in fceumm palette and the option simply has nothing to choose from. It
+  is `required: false` because nothing stops working when it is absent. The
+  project does not ship it: this repository has no generator for it, so it is
+  the user's file to supply.
+
+### Notes
+
+- `/bios/nes/gamegenie.nes` is deliberately *not* declared. The only code that
+  reads it, `FCEU_OpenGenie()` in `src/fceumm/src/fceu-cart.c`, sits inside
+  `#ifdef FCEU_ENABLE_GAMEGENIE_ROM`, and that macro is defined nowhere in this
+  tree or its build. The shipped binary never opens the file, and a manifest
+  that asked a user for a copyrighted Game Genie ROM the core cannot use would
+  be asking for nothing.
+
 ## [v0.1.0] - 2026-09-08
 
 ### Added
