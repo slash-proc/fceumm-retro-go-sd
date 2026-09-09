@@ -21,6 +21,14 @@
   that asked a user for a copyrighted Game Genie ROM the core cannot use would
   be asking for nothing.
 
+### Changed
+
+- The manifest's `kind` is now `core`, not `emulator`. A core that emulates
+  nothing -- Doom -- showed that the old word named a subset rather than the
+  set, so the spec took the general term and the SDK and the spec now agree.
+  The previous release publishes the old value and no longer validates.
+
+
 ## [v0.1.0] - 2026-09-08
 
 ### Added
