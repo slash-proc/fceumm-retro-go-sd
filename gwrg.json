@@ -3,6 +3,10 @@
     "nes": {
       "shortName": "NES",
       "compression": false,
+      "runtime": {
+        "savestate": { "supported": true },
+        "save": { "supported": true }
+      },
       "bios": [
         {
           "id": "disksys",
