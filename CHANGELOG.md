@@ -1,42 +1,22 @@
 # Changelog
 
-## [v0.0.2]
+## [v0.0.3]
 
 ### Added
 
-- Nothing
+- Nothing.
 
 ### Changed
 
-- Use LUT8 mode instead of RGB565
+- Nothing.
 
 ### Fixed
 
-- Fix for green screen showing randomly
-
-## [v0.0.1]
-
-### Added
-
-- Nothing
-
-### Changed
-
-- No more grey screen at startup
-
-### Fixed
-
-- Big NFS don't crash
-- Slowdowns in YS III (mapper 118)
+- Fix video sync issue.
 
 ### Install
 
-Only the section corresponding to your chosen `PROJECT_KIND` is relevant for
-your derived project.
-
-**Core (`PROJECT_KIND=core`, default)**
-
-- Copy `example.bin` to `/cores/` on the SD card.
-- Place test ROMs under `/roms/example/` (dirname matches `CORE_NAME` in the
-  Makefile).
+- Unzip the release archive onto the SD card root (`cores/fceumm.bin`).
+- Place ROMs/FDS/NSF under `/roms/nes/`.
+- Place FDS bios under `/bios/nes/disksys.rom` to play FDS games.
 - Requires firmware whose ABI matches `SDK_VERSION` in this repository.

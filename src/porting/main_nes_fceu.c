@@ -1359,11 +1359,7 @@ int app_main_nes_fceu(uint8_t load_state, uint8_t start_paused, int8_t save_slot
 
         FCEUI_Emulate(&gfx, &sound, &ssize, !drawFrame);
 
-        /* lcd_swap() flips the draw buffer straight away, but LTDC keeps
-         * scanning it until the reload lands at VBLANK. Blitting before
-         * then tears RGB565 words on screen (brief green flashes), so skip
-         * the present when the previous swap is still in flight. */
-        if (drawFrame && !lcd_is_swap_pending())
+        if (drawFrame)
         {
             nes_present_frame();
             lcd_swap();
