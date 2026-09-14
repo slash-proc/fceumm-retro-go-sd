@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.3] - 2026-09-14
+
+### Changed
+
+- Bound per-title persistent-save storage at 524,000 bytes, covering the
+  core's maximum eight-side FDS writable-disk copy as well as NES SRAM.
+
 ## [v0.1.2] - 2026-09-13
 
 ### Changed
