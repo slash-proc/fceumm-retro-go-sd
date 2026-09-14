@@ -5,7 +5,7 @@
       "compression": false,
       "runtime": {
         "savestate": { "supported": true },
-        "save": { "supported": true }
+        "save": { "supported": true, "bytes": 524000 }
       },
       "bios": [
         {
