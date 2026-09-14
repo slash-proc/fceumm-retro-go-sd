@@ -6,7 +6,7 @@ Standalone FCEUmm core for
 ## Build
 
 ```bash
-make            # → fceumm.bin (CORE + mappers.pak + ines_correct.bin)
+make            # → fceumm.bin (CORE + mappers + ines DB + palettes)
 make docker     # same, no host toolchain
 ```
 
@@ -16,11 +16,11 @@ Requires `arm-none-eabi-gcc` (hard-float `fpv5-d16`), Make, Python 3 + Pillow.
 
 | Path | Role |
 |------|------|
-| `/cores/fceumm.bin` | Packed core + mapper overlays + iNES correction DB |
+| `/cores/fceumm.bin` | Packed core + mappers + iNES DB + palettes |
 | `/roms/nes/*.nes` (also `.fds`, `.nsf`) | ROMs |
-| `/bios/nes/palettes.bin` | Optional palettes |
+| `/bios/nes/disksys.rom` | FDS BIOS (required for FDS games) |
 
-Cheat files use the `ggcodes` extension (Game Genie).
+Palettes and the iNES correction DB ship inside `fceumm.bin` (FCAS sidecars).
 
 ## Memory layout
 

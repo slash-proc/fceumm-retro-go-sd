@@ -34,6 +34,7 @@
 #endif
 #include "nes_i18n.h"
 #include "nes_fatal.h"
+#include "nes_fceu_mappers.h"
 
 #define NES_WIDTH  256
 #define NES_HEIGHT 240
@@ -196,30 +197,40 @@ struct st_palettes {
    unsigned int data[64];
 };
 
-#define PALETTE_FILENAME "/bios/nes/palettes.bin"
+/* Packed into fceumm.bin (FCAS v2 palettes sidecar). */
 static uint16_t palettes_count;
 static struct st_palettes palette;
+static uint32_t palettes_base_off;
 
-static uint16_t get_palettes_count() {
-    FILE *file = fopen(PALETTE_FILENAME, "rb");
-    if (!file) {
+static bool palettes_open(FILE **out_file) {
+    uint32_t size = 0;
+    const char *path = fceumm_assets_palettes_path();
+    if (!path || !fceumm_assets_palettes(&palettes_base_off, &size) || size == 0)
+        return false;
+    FILE *file = fopen(path, "rb");
+    if (!file)
+        return false;
+    *out_file = file;
+    return true;
+}
+
+static uint16_t get_palettes_count(void) {
+    uint32_t size = 0;
+    if (!fceumm_assets_palettes(NULL, &size) || size == 0)
         return 0;
-    }
-
-    fseek(file, 0, SEEK_END);
-    uint16_t size = (uint16_t)ftell(file);
-    fclose(file);
-
-    return size / sizeof(struct st_palettes);
+    return (uint16_t)(size / sizeof(struct st_palettes));
 }
 
 static int get_palette_name(int index, char *name_out) {
-    FILE *file = fopen(PALETTE_FILENAME, "rb");
-    if (!file) {
+    FILE *file;
+    if (!palettes_open(&file))
+        return 0;
+
+    if (fseek(file, (long)palettes_base_off + index * (long)sizeof(struct st_palettes),
+              SEEK_SET) != 0) {
+        fclose(file);
         return 0;
     }
-
-    fseek(file, index * sizeof(struct st_palettes), SEEK_SET);
     fread(name_out, sizeof(char), 21, file);
     name_out[20] = '\0';
 
@@ -227,17 +238,19 @@ static int get_palette_name(int index, char *name_out) {
     return 1;
 }
 
-static int load_palette(int index, struct st_palettes *palette) {
-    FILE *file = fopen(PALETTE_FILENAME, "rb");
-    if (!file) {
+static int load_palette(int index, struct st_palettes *out) {
+    FILE *file;
+    if (!palettes_open(&file))
+        return 0;
+
+    if (fseek(file, (long)palettes_base_off + index * (long)sizeof(struct st_palettes),
+              SEEK_SET) != 0) {
+        fclose(file);
         return 0;
     }
-
-    fseek(file, index * sizeof(struct st_palettes), SEEK_SET);
-    fread(palette, sizeof(struct st_palettes), 1, file);
-
+    size_t n = fread(out, sizeof(struct st_palettes), 1, file);
     fclose(file);
-    return 1;
+    return n == 1;
 }
 
 void setCustomPalette(uint16_t palette_idx) {
@@ -258,7 +271,7 @@ void setCustomPalette(uint16_t palette_idx) {
  *   idx == 0 (or no palette file)  -> fceumm built-in default palette
  *                                     (this is what a fresh "new game" shows).
  *   idx 1..palettes_count          -> custom palette entry [idx-1] from
- *                                     /bios/nes/palettes.bin.
+ *                                     the palettes sidecar in fceumm.bin.
  */
 static void apply_palette(uint8_t idx) {
     if (idx == 0 || palettes_count == 0) {

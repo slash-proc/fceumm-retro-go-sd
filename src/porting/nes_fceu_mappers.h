@@ -12,10 +12,13 @@
 #define FCEUMM_MAPPER_PACK_LEGACY "/cores/nes_fceumm_mappers/mappers.pak"
 #define FCEUMM_INES_CORRECT_LEGACY "/cores/nes_fceumm_mappers/ines_correct.bin"
 
-/* FCAS trailer after the CORE container — see scripts/append_fceumm_sidecars.py. */
+/* FCAS trailer after the CORE container — see scripts/append_fceumm_sidecars.py.
+ * v1: mappers + ines (24 B footer). v2: + palettes (32 B footer). */
 #define FCEUMM_ASSETS_MAGIC   0x53414346u /* 'F','C','A','S' */
-#define FCEUMM_ASSETS_VERSION 1u
-#define FCEUMM_ASSETS_FOOTER_SIZE 24u
+#define FCEUMM_ASSETS_VERSION 2u
+#define FCEUMM_ASSETS_FOOTER_SIZE_V1 24u
+#define FCEUMM_ASSETS_FOOTER_SIZE_V2 32u
+#define FCEUMM_ASSETS_FOOTER_SIZE FCEUMM_ASSETS_FOOTER_SIZE_V2
 
 /* Resolve the running core .bin and locate embedded (or legacy) assets.
  * Returns false if neither form is available. */
@@ -23,8 +26,11 @@ bool fceumm_assets_ready(void);
 const char *fceumm_assets_core_path(void);
 /* Path of the file that contains the iNES correction DB (core .bin or legacy). */
 const char *fceumm_assets_ines_path(void);
+/* Path of the file that contains the palettes sidecar (always the core .bin). */
+const char *fceumm_assets_palettes_path(void);
 bool fceumm_assets_mappers(uint32_t *offset, uint32_t *size);
 bool fceumm_assets_ines(uint32_t *offset, uint32_t *size);
+bool fceumm_assets_palettes(uint32_t *offset, uint32_t *size);
 
 /* Load the mapper blob for `mapper_number` into `dest`.
  * Returns bytes loaded, or 0 when absent / too large. */

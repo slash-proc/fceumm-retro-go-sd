@@ -26,6 +26,8 @@ typedef struct {
     uint32_t mappers_size;
     uint32_t ines_off;
     uint32_t ines_size;
+    uint32_t palettes_off;
+    uint32_t palettes_size;
     int8_t ready; /* 0 = unset, 1 = ok, -1 = failed */
 } fceumm_assets_cache_t;
 
@@ -57,37 +59,71 @@ static bool fceumm_file_size(const char *path, uint32_t *out_size) {
     return true;
 }
 
-static bool fceumm_try_fcas_footer(FILE *file, long filesize) {
-    uint8_t footer[FCEUMM_ASSETS_FOOTER_SIZE];
-
-    if (filesize < (long)FCEUMM_ASSETS_FOOTER_SIZE)
+static bool fceumm_region_ok(uint32_t off, uint32_t sz, long filesize, uint32_t footer_size) {
+    if (sz == 0)
         return false;
-    if (fseek(file, filesize - (long)FCEUMM_ASSETS_FOOTER_SIZE, SEEK_SET) != 0)
+    if ((uint64_t)off + sz > (uint64_t)filesize - footer_size)
         return false;
-    if (fread(footer, 1, FCEUMM_ASSETS_FOOTER_SIZE, file) != FCEUMM_ASSETS_FOOTER_SIZE)
-        return false;
-
-    uint32_t magic = rd_u32le(footer);
-    uint32_t version = rd_u32le(footer + 4);
-    uint32_t m_off = rd_u32le(footer + 8);
-    uint32_t m_sz = rd_u32le(footer + 12);
-    uint32_t i_off = rd_u32le(footer + 16);
-    uint32_t i_sz = rd_u32le(footer + 20);
-
-    if (magic != FCEUMM_ASSETS_MAGIC || version != FCEUMM_ASSETS_VERSION)
-        return false;
-    if (m_sz == 0 || i_sz == 0)
-        return false;
-    if ((uint64_t)m_off + m_sz > (uint64_t)filesize - FCEUMM_ASSETS_FOOTER_SIZE)
-        return false;
-    if ((uint64_t)i_off + i_sz > (uint64_t)filesize - FCEUMM_ASSETS_FOOTER_SIZE)
-        return false;
-
-    g_assets.mappers_off = m_off;
-    g_assets.mappers_size = m_sz;
-    g_assets.ines_off = i_off;
-    g_assets.ines_size = i_sz;
     return true;
+}
+
+static bool fceumm_try_fcas_footer(FILE *file, long filesize) {
+    uint8_t footer[FCEUMM_ASSETS_FOOTER_SIZE_V2];
+
+    /* Prefer v2 (32 B, includes palettes). */
+    if (filesize >= (long)FCEUMM_ASSETS_FOOTER_SIZE_V2) {
+        if (fseek(file, filesize - (long)FCEUMM_ASSETS_FOOTER_SIZE_V2, SEEK_SET) == 0 &&
+            fread(footer, 1, FCEUMM_ASSETS_FOOTER_SIZE_V2, file) == FCEUMM_ASSETS_FOOTER_SIZE_V2) {
+            uint32_t magic = rd_u32le(footer);
+            uint32_t version = rd_u32le(footer + 4);
+            if (magic == FCEUMM_ASSETS_MAGIC && version == FCEUMM_ASSETS_VERSION) {
+                uint32_t m_off = rd_u32le(footer + 8);
+                uint32_t m_sz = rd_u32le(footer + 12);
+                uint32_t i_off = rd_u32le(footer + 16);
+                uint32_t i_sz = rd_u32le(footer + 20);
+                uint32_t p_off = rd_u32le(footer + 24);
+                uint32_t p_sz = rd_u32le(footer + 28);
+                if (fceumm_region_ok(m_off, m_sz, filesize, FCEUMM_ASSETS_FOOTER_SIZE_V2) &&
+                    fceumm_region_ok(i_off, i_sz, filesize, FCEUMM_ASSETS_FOOTER_SIZE_V2) &&
+                    fceumm_region_ok(p_off, p_sz, filesize, FCEUMM_ASSETS_FOOTER_SIZE_V2)) {
+                    g_assets.mappers_off = m_off;
+                    g_assets.mappers_size = m_sz;
+                    g_assets.ines_off = i_off;
+                    g_assets.ines_size = i_sz;
+                    g_assets.palettes_off = p_off;
+                    g_assets.palettes_size = p_sz;
+                    return true;
+                }
+            }
+        }
+    }
+
+    /* Fall back to v1 (mappers + ines only). */
+    if (filesize >= (long)FCEUMM_ASSETS_FOOTER_SIZE_V1) {
+        if (fseek(file, filesize - (long)FCEUMM_ASSETS_FOOTER_SIZE_V1, SEEK_SET) == 0 &&
+            fread(footer, 1, FCEUMM_ASSETS_FOOTER_SIZE_V1, file) == FCEUMM_ASSETS_FOOTER_SIZE_V1) {
+            uint32_t magic = rd_u32le(footer);
+            uint32_t version = rd_u32le(footer + 4);
+            if (magic == FCEUMM_ASSETS_MAGIC && version == 1u) {
+                uint32_t m_off = rd_u32le(footer + 8);
+                uint32_t m_sz = rd_u32le(footer + 12);
+                uint32_t i_off = rd_u32le(footer + 16);
+                uint32_t i_sz = rd_u32le(footer + 20);
+                if (fceumm_region_ok(m_off, m_sz, filesize, FCEUMM_ASSETS_FOOTER_SIZE_V1) &&
+                    fceumm_region_ok(i_off, i_sz, filesize, FCEUMM_ASSETS_FOOTER_SIZE_V1)) {
+                    g_assets.mappers_off = m_off;
+                    g_assets.mappers_size = m_sz;
+                    g_assets.ines_off = i_off;
+                    g_assets.ines_size = i_sz;
+                    g_assets.palettes_off = 0;
+                    g_assets.palettes_size = 0;
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
 static bool fceumm_assets_init(void) {
@@ -125,6 +161,8 @@ static bool fceumm_assets_init(void) {
         g_assets.mappers_size = m_sz;
         g_assets.ines_off = 0;
         g_assets.ines_size = i_sz;
+        g_assets.palettes_off = 0;
+        g_assets.palettes_size = 0;
         g_assets.ready = 1;
         return true;
     }
@@ -163,6 +201,18 @@ bool fceumm_assets_ines(uint32_t *offset, uint32_t *size) {
     return true;
 }
 
+bool fceumm_assets_palettes(uint32_t *offset, uint32_t *size) {
+    if (!fceumm_assets_init())
+        return false;
+    if (g_assets.palettes_size == 0)
+        return false;
+    if (offset)
+        *offset = g_assets.palettes_off;
+    if (size)
+        *size = g_assets.palettes_size;
+    return true;
+}
+
 /* True when using the old /cores/nes_fceumm_mappers/ split files. */
 static bool fceumm_assets_is_legacy_split(void) {
     return fceumm_assets_init() &&
@@ -175,6 +225,12 @@ const char *fceumm_assets_ines_path(void) {
         return NULL;
     if (fceumm_assets_is_legacy_split())
         return FCEUMM_INES_CORRECT_LEGACY;
+    return g_assets.path;
+}
+
+const char *fceumm_assets_palettes_path(void) {
+    if (!fceumm_assets_palettes(NULL, NULL))
+        return NULL;
     return g_assets.path;
 }
 

@@ -1,10 +1,10 @@
 # Changelog
 
-## [v0.0.3]
+## [v0.0.4]
 
 ### Added
 
-- Nothing.
+- Embed NES colour palettes in `fceumm.bin` (it was missing).
 
 ### Changed
 
@@ -12,7 +12,7 @@
 
 ### Fixed
 
-- Fix video sync issue.
+- Nothing.
 
 ### Install
 

@@ -1,6 +1,6 @@
 # Nintendo Entertainment System (FCEUmm) — standalone Retro-Go SD core.
 #
-#   make                  — build + pack → fceumm.bin (core + mappers + ines DB)
+#   make                  — build + pack → fceumm.bin (core + mappers + ines + palettes)
 #   make NES_LCD_MODE=lut8|rgb565
 #   make docker           — same build inside Docker (no host toolchain)
 #   make docker_shell     — interactive shell in the builder image
@@ -118,6 +118,7 @@ MAPPERS_OUT := nes_fceumm_mappers
 MAPPER_BINS := $(addprefix $(MAPPERS_OUT)/mapper_,$(addsuffix .bin,$(MAPPER_STEMS)))
 MAPPERS_PACK := $(MAPPERS_OUT)/mappers.pak
 INES_CORRECT := $(MAPPERS_OUT)/ines_correct.bin
+PALETTES_BIN := $(MAPPERS_OUT)/palettes.bin
 MAPPER_OVERLAYS_LD := $(BUILD_DIR)/nes_mapper_overlays.ld
 
 # Feed mapper objects into the shared sdk link recipe (no recipe override).
@@ -166,12 +167,15 @@ $(MAPPERS_PACK): $(MAPPER_BINS) scripts/gen_mappers_pack.py $(CORE_FCEUMM)/gen_m
 $(INES_CORRECT): $(CORE_FCEUMM)/gen_ines_database.py $(CORE_FCEUMM)/src/ines-correct.h | $(MAPPERS_OUT)
 	$(V)python3 $(CORE_FCEUMM)/gen_ines_database.py $@
 
+$(PALETTES_BIN): scripts/gen_fceu_palettes_table.py src/assets/fceu_palettes.h | $(MAPPERS_OUT)
+	$(V)python3 scripts/gen_fceu_palettes_table.py --input src/assets/fceu_palettes.h $@
+
 #######################################
 # Pack
 #######################################
 .PHONY: pack
 
-pack: $(TARGET_BIN) $(BUILD_DIR)/$(CORE_NAME)_core_itcm.bin $(PAD_LOGO) $(HEADER_LOGO) $(MAPPERS_PACK) $(INES_CORRECT)
+pack: $(TARGET_BIN) $(BUILD_DIR)/$(CORE_NAME)_core_itcm.bin $(PAD_LOGO) $(HEADER_LOGO) $(MAPPERS_PACK) $(INES_CORRECT) $(PALETTES_BIN)
 	$(V)$(ECHO) [ PACK CORE ] $(PACKED_BIN) version=$(CORE_VERSION)
 	$(V)python3 $(PACK_CORE) \
 		--elf $(TARGET_ELF) --bin $(TARGET_BIN) \
@@ -188,7 +192,8 @@ pack: $(TARGET_BIN) $(BUILD_DIR)/$(CORE_NAME)_core_itcm.bin $(PAD_LOGO) $(HEADER
 	$(V)python3 scripts/append_fceumm_sidecars.py \
 		--core $(PACKED_BIN) \
 		--mappers $(MAPPERS_PACK) \
-		--ines $(INES_CORRECT)
+		--ines $(INES_CORRECT) \
+		--palettes $(PALETTES_BIN)
 
 all: pack
 
