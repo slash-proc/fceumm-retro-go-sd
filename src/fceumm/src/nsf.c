@@ -451,6 +451,7 @@ void NSF_init(void) {
 		if (mapper_size) {
 			memset((char *)(&__RAM_EMU_START__) + mapper_size, 0x0, (size_t)(&__RAM_FCEUMM_MAPPER_LENGTH__)-mapper_size);
 			SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, mapper_size);
+			SCB_InvalidateICache();
 		}
 #endif
 		NSFVRC6_Init();
@@ -460,6 +461,7 @@ void NSF_init(void) {
 		if (mapper_size) {
 			memset((char *)(&__RAM_EMU_START__) + mapper_size, 0x0, (size_t)(&__RAM_FCEUMM_MAPPER_LENGTH__)-mapper_size);
 			SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, mapper_size);
+			SCB_InvalidateICache();
 		}
 #endif
 		NSFVRC7_Init();
@@ -471,6 +473,7 @@ void NSF_init(void) {
 		if (mapper_size) {
 			memset((char *)(&__RAM_EMU_START__) + mapper_size, 0x0, (size_t)(&__RAM_FCEUMM_MAPPER_LENGTH__)-mapper_size);
 			SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, mapper_size);
+			SCB_InvalidateICache();
 		}
 #endif
 		NSFMMC5_Init();
@@ -480,6 +483,7 @@ void NSF_init(void) {
 		if (mapper_size) {
 			memset((char *)(&__RAM_EMU_START__) + mapper_size, 0x0, (size_t)(&__RAM_FCEUMM_MAPPER_LENGTH__)-mapper_size);
 			SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, mapper_size);
+			SCB_InvalidateICache();
 		}
 #endif
 		NSFN106_Init();
@@ -489,6 +493,7 @@ void NSF_init(void) {
 		if (mapper_size) {
 			memset((char *)(&__RAM_EMU_START__) + mapper_size, 0x0, (size_t)(&__RAM_FCEUMM_MAPPER_LENGTH__)-mapper_size);
 			SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, mapper_size);
+			SCB_InvalidateICache();
 		}
 #endif
 		NSFAY_Init();

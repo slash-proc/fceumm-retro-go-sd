@@ -1523,7 +1523,11 @@ static int iNES_Init(int num) {
 			if (mapper_size) {
 				FCEU_printf("Loaded %d b of mapper %d in ram\n",mapper_size,num);
 				memset((char *)(&__RAM_EMU_START__) + mapper_size, 0x0, (size_t)(&__RAM_FCEUMM_MAPPER_LENGTH__)-mapper_size);
+				/* Overlay shares VMA with gnw_core_entry (executed at boot).
+				 * Clean D alone is not enough: I-cache still holds the
+				 * trampoline, so Latch_Init @ +0x20 would run stale insn. */
 				SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, mapper_size);
+				SCB_InvalidateICache();
 			} else {
 				/* Overlay boards are linked into the 48 KiB mapper window; if
 				 * the pak blob is missing, calling init would jump into empty RAM. */

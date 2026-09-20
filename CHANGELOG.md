@@ -1,10 +1,10 @@
 # Changelog
 
-## [v0.0.4]
+## [v0.0.5]
 
 ### Added
 
-- Embed NES colour palettes in `fceumm.bin` (it was missing).
+- Nothing.
 
 ### Changed
 
@@ -12,7 +12,7 @@
 
 ### Fixed
 
-- Nothing.
+- Invalidate I cache after loading mapper in ram to prevent crash with some games.
 
 ### Install
 
