@@ -42,6 +42,7 @@
 #if defined(TARGET_GNW) && !defined(LINUX_EMU) && !defined(HOST_BUILD)
 #include <odroid_system.h>
 #include "gw_linker.h"
+#include "nes_linker.h"
 #endif
 #ifdef TARGET_GNW
 #include "nes_fatal.h"

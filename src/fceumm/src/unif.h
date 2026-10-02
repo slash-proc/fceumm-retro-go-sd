@@ -192,4 +192,8 @@ extern uint8 *UNIFchrrama;	/* Meh.  So I can stop CHR RAM
 							 * bank switcherooing with certain boards...
 							 */
 
+#ifdef TARGET_GNW
+int UNIFLoadBuffer(const char *name, const uint8_t *rom, uint32_t rom_size);
+#endif
+
 #endif

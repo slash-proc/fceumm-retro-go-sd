@@ -384,3 +384,35 @@ const gw_i18n_entry_t nes_i18n_nsf_too_large[] = {
     GW_I18N_END
 };
 
+const gw_i18n_entry_t nes_i18n_rom_too_large[] = {
+    { "en", "ROM too large (%d MiB)" },
+    { "fr", "ROM trop grosse (%d Mio)" },
+    { "es", "ROM demasiado grande (%d MiB)" },
+    { "pt", "ROM grande demais (%d MiB)" },
+    { "de", "ROM zu groß (%d MiB)" },
+    { "it", "ROM troppo grande (%d MiB)" },
+    { "no", "ROM for stor (%d MiB)" },
+    { "ru", "ROM слишком большая (%d МиБ)" },
+    { "zh_cn", "ROM 过大 (%d MiB)" },
+    { "zh_tw", "ROM 過大 (%d MiB)" },
+    { "ko", "ROM이 너무 큼 (%d MiB)" },
+    { "ja", "ROMが大きすぎます (%d MiB)" },
+    GW_I18N_END
+};
+
+const gw_i18n_entry_t nes_i18n_rom_flash_limit[] = {
+    { "en", "Flash cache max %d MiB" },
+    { "fr", "Cache flash max %d Mio" },
+    { "es", "Caché flash máx. %d MiB" },
+    { "pt", "Cache flash máx. %d MiB" },
+    { "de", "Flash-Cache max. %d MiB" },
+    { "it", "Cache flash max %d MiB" },
+    { "no", "Flash-cache maks %d MiB" },
+    { "ru", "Кэш flash макс. %d МиБ" },
+    { "zh_cn", "闪存缓存最大 %d MiB" },
+    { "zh_tw", "快閃快取最大 %d MiB" },
+    { "ko", "플래시 캐시 최대 %d MiB" },
+    { "ja", "フラッシュキャッシュ最大 %d MiB" },
+    GW_I18N_END
+};
+

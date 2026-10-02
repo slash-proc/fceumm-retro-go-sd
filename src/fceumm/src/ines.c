@@ -47,6 +47,7 @@
 #ifndef LINUX_EMU
 #include <odroid_system.h>
 #include "gw_linker.h"
+#include "nes_linker.h"
 #include "rg_storage.h"
 #include "nes_fatal.h"
 #endif
@@ -1063,6 +1064,9 @@ int iNESLoad(const char *name, const uint8_t *rom, uint32_t rom_size)
    uint32 rom_size_pow2    = 0;
    uint32 vrom_size_pow2   = 0;
 
+   if (!rom || rom_size < 16)
+      return 0;
+
    memcpy(&head, rom, 16);
    offset+=16;
 
@@ -1470,9 +1474,7 @@ static int iNES_Init(int num) {
 
 	while (tmp->init) {
 		if (num == tmp->number) {
-#ifndef TARGET_GNW
 			UNIFchrrama = 0;	/* need here for compatibility with UNIF mapper code */
-#endif
 			if (!VROM_size) {
 				if (iNESCart.iNES2) {
 					CHRRAMSize = iNESCart.CHRRamSize + iNESCart.CHRRamSaveSize;

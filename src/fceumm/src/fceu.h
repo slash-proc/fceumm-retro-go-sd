@@ -116,6 +116,11 @@ extern FCEUS FSettings;
 void FCEU_PrintError(char *format, ...);
 void FCEU_printf(char *format, ...);
 
+#ifdef TARGET_GNW
+/* Port sets this to ACTIVE_FILE->ext before FCEUI_LoadGame(). */
+extern const char *fceu_load_ext_hint;
+#endif
+
 void SetNESDeemph(uint8 d, int force);
 void DrawTextTrans(uint8 *dest, uint32 width, uint8 *textmsg, uint8 fgcolor);
 void FCEU_PutImage(void);

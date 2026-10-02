@@ -722,6 +722,12 @@ int odroid_overlay_confirm(const char *text, bool yes_selected, void_callback_t 
 }
 void odroid_overlay_alert(const char *text) { (void)text; }
 
+uint32_t flash_cache_usable_size(void)
+{
+    /* Host has no QSPI cache — report a large budget so pre-checks pass. */
+    return 1024u * 1024u * 1024u;
+}
+
 uint8_t *odroid_overlay_cache_file_in_flash(const char *file_path, uint32_t *file_size_p,
                                             bool byte_swap)
 {

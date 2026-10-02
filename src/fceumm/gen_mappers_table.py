@@ -562,6 +562,16 @@ mapper_dict = {
     556: "556",
 #   557: "",
     558: "558",
+    # UNIF-only boards (no iNES id) — overlay aliases used by unif.c UNIF_OVLY_*
+    600: "le05",
+    601: "pec_586",
+    602: "famicombox",
+    603: "t_227_1",
+    604: "transformer",
+    605: "et_4320",
+    606: "resetnromxin1",
+    607: "resetnromxin1",
+    608: "KG256",
 }
 
 n = len(sys.argv)

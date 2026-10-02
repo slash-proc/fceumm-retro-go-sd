@@ -22,6 +22,9 @@
 #include  <string.h>
 #include  <stdlib.h>
 #include  <stdarg.h>
+#ifdef TARGET_GNW
+#include  <strings.h>
+#endif
 
 #include "fceu.h"
 #include  "fceu-types.h"
@@ -46,6 +49,12 @@
 #include  "input.h"
 #include  "file.h"
 #include  "vsuni.h"
+
+#ifdef TARGET_GNW
+/* Set by the port before FCEUI_LoadGame so we try the matching loader
+ * first and do not probe FDS/UNIF on every .nes (which polluted errors). */
+const char *fceu_load_ext_hint = NULL;
+#endif
 
 uint64 timestampbase;
 
@@ -674,6 +683,7 @@ void ResetGameLoaded(void)
 
 #ifdef TARGET_GNW
 int iNESLoad(const char *name, const uint8_t *rom, uint32_t rom_size);
+int UNIFLoadBuffer(const char *name, const uint8_t *rom, uint32_t rom_size);
 int FDSLoad(const char *name, const char *rom, uint32_t rom_size);
 int NSFLoad(const char *name, const char *rom, uint32_t rom_size);
 #else
@@ -687,6 +697,10 @@ int NSFLoad(FCEUFILE *fp);
 FCEUGI *FCEUI_LoadGame(const char *name, const uint8_t *databuf, size_t databufsize,
       frontend_post_load_init_cb_t frontend_post_load_init_cb)
 {
+   const char *ext = fceu_load_ext_hint ? fceu_load_ext_hint : "";
+   int try_ines = 1, try_unif = 1, try_nsf = 1, try_fds = 1;
+   int loaded = 0;
+
    ResetGameLoaded();
 
    GameInfo = &gameinfo_global;
@@ -701,17 +715,41 @@ FCEUGI *FCEUI_LoadGame(const char *name, const uint8_t *databuf, size_t databufs
    GameInfo->inputfc = -1;
    GameInfo->cspecial = 0;
 
-   if (iNESLoad(name, (const uint8_t *)databuf, databufsize))
-      goto endlseq;
-   if (NSFLoad(name, (const char *)databuf, databufsize))
-      goto endlseq;
-   if (FDSLoad(name, (const char *)databuf, databufsize))
-      goto endlseq;
+   if (!databuf || databufsize < 16) {
+      FCEU_PrintError("ROM buffer empty or too small.\n");
+      return NULL;
+   }
 
-   FCEU_PrintError("An error occurred while loading the file.\n");
-   return NULL;
+   /* Extension-restricted probe: a .nes must not fall through to FDS and
+    * demand disksys.rom, and a failed FDS probe must not hide iNES errors. */
+   if (ext[0]) {
+      try_ines = try_unif = try_nsf = try_fds = 0;
+      if (!strcasecmp(ext, "nes") || !strcasecmp(ext, "ines"))
+         try_ines = 1;
+      else if (!strcasecmp(ext, "unf") || !strcasecmp(ext, "unif"))
+         try_unif = 1;
+      else if (!strcasecmp(ext, "nsf"))
+         try_nsf = 1;
+      else if (!strcasecmp(ext, "fds"))
+         try_fds = 1;
+      else
+         try_ines = try_unif = try_nsf = try_fds = 1; /* unknown: magic-probe all */
+   }
 
-endlseq:
+   if (try_ines)
+      loaded = iNESLoad(name, (const uint8_t *)databuf, databufsize);
+   if (!loaded && try_unif)
+      loaded = UNIFLoadBuffer(name, (const uint8_t *)databuf, databufsize);
+   if (!loaded && try_nsf)
+      loaded = NSFLoad(name, (const char *)databuf, databufsize);
+   if (!loaded && try_fds)
+      loaded = FDSLoad(name, (const char *)databuf, databufsize);
+
+   if (!loaded) {
+      FCEU_PrintError("An error occurred while loading the file.\n");
+      return NULL;
+   }
+
    if (frontend_post_load_init_cb)
       (*frontend_post_load_init_cb)();
 

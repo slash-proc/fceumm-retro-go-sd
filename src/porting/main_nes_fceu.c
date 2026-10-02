@@ -20,6 +20,7 @@
 #include "gw_malloc.h"
 #include "odroid_overlay.h"
 #include "rg_storage.h"
+#include "gw_flash_alloc.h"
 
 /* This core is built standalone and talks to the firmware only through
  * gw_firmware_abi_t. Must come after the includes above so their `extern`
@@ -40,6 +41,7 @@
 #define NES_HEIGHT 240
 
 extern CartInfo iNESCart;
+extern CartInfo UNIFCart;
 
 static nes_load_err_t nes_load_err = NES_LOAD_ERR_NONE;
 static int nes_load_err_arg;
@@ -124,6 +126,13 @@ void nes_fatal_if_load_failed(void *gameInfo)
                  nes_load_err_arg);
         nes_fatal(line1, "");
         break;
+    case NES_LOAD_ERR_ROM_TOO_LARGE:
+        snprintf(line1, sizeof(line1), gw_i18n(nes_i18n_rom_too_large),
+                 nes_load_err_arg);
+        if (nes_load_err_detail[0])
+            nes_fatal(line1, nes_load_err_detail);
+        nes_fatal(line1, "");
+        break;
     case NES_LOAD_ERR_GENERIC:
         if (nes_load_err_detail[0])
             nes_fatal(nes_load_err_detail, "");
@@ -150,8 +159,6 @@ static uint8_t palette_index = 0;
 static uint8_t overclocking_type = 0;
 static uint8_t allow_swap_disk = 0;
 static bool disable_sprite_limit = false;
-
-uint8_t *UNIFchrrama = 0;
 
 unsigned overclock_enabled = -1;
 unsigned overclocked = 0;
@@ -359,8 +366,8 @@ static void *Screenshot()
          return NULL;
      if (iNESCart.battery && iNESCart.SaveGame[0] && iNESCart.SaveGameLen[0])
          return &iNESCart;
- /*	if (UNIFCart.battery && UNIFCart.SaveGame[0] && UNIFCart.SaveGameLen[0])
-         return &UNIFCart;*/
+     if (UNIFCart.battery && UNIFCart.SaveGame[0] && UNIFCart.SaveGameLen[0])
+         return &UNIFCart;
      return NULL;
  }
  
@@ -978,12 +985,53 @@ static size_t nes_getromdata(unsigned char **data)
      * free for the 32 KiB bank window + WRAM. Banks are paged in nsf.c. */
     if ((ACTIVE_FILE->ext && strcasecmp(ACTIVE_FILE->ext, "nsf") == 0) ||
         size > ram_get_free_size()) {
+        /* Same guard as gngeo: refuse before the long "Caching game…" pass
+         * when the ROM cannot fit in the QSPI cache (extflash − OFW reserve).
+         * usable==0 means old firmware without the ABI slot — fall through. */
+        {
+            uint32_t usable = flash_cache_usable_size();
+            if (usable && size > usable) {
+                uint32_t rom_mib = (size + (1024u * 1024u - 1u)) / (1024u * 1024u);
+                uint32_t max_mib = usable / (1024u * 1024u);
+                if (rom_mib < 1u)
+                    rom_mib = 1u;
+                printf("nes: ROM %lu bytes > flash cache usable %lu\n",
+                       (unsigned long)size, (unsigned long)usable);
+                nes_load_error_set(NES_LOAD_ERR_ROM_TOO_LARGE, (int)rom_mib);
+                snprintf(nes_load_err_detail, sizeof(nes_load_err_detail),
+                         gw_i18n(nes_i18n_rom_flash_limit), (int)max_mib);
+                *data = NULL;
+                return 0;
+            }
+        }
         *data = odroid_overlay_cache_file_in_flash(ACTIVE_FILE->path, &size, false);
     } else {
         *data = ram_malloc(size);
         if (*data != NULL) {
-            odroid_overlay_cache_file_in_ram(ACTIVE_FILE->path, *data);
+            size_t got = odroid_overlay_cache_file_in_ram(ACTIVE_FILE->path, *data);
+            if (got != size) {
+                /* Incomplete read — fall back to flash mapping. */
+                *data = odroid_overlay_cache_file_in_flash(ACTIVE_FILE->path, &size, false);
+            }
+        } else {
+            /* RAM_EMU bump exhausted — map from SD/flash instead. */
+            *data = odroid_overlay_cache_file_in_flash(ACTIVE_FILE->path, &size, false);
         }
+    }
+    if (*data == NULL) {
+        uint32_t usable = flash_cache_usable_size();
+        uint32_t rom_mib = (ACTIVE_FILE->size + (1024u * 1024u - 1u)) / (1024u * 1024u);
+        if (rom_mib < 1u)
+            rom_mib = 1u;
+        nes_load_error_set(NES_LOAD_ERR_ROM_TOO_LARGE, (int)rom_mib);
+        if (usable) {
+            uint32_t max_mib = usable / (1024u * 1024u);
+            snprintf(nes_load_err_detail, sizeof(nes_load_err_detail),
+                     gw_i18n(nes_i18n_rom_flash_limit), (int)max_mib);
+        } else {
+            nes_load_err_detail[0] = '\0';
+        }
+        return 0;
     }
     return size;
 #endif
@@ -1280,8 +1328,13 @@ int app_main_nes_fceu(uint8_t load_state, uint8_t start_paused, int8_t save_slot
     /* FCEU heap uses ram_calloc (RAM_EMU), not ITCM — no NULL-address stub. */
     FCEUI_Initialize();
 
-    rom_size = nes_getromdata(&rom_data);
     nes_load_error_clear();
+    rom_size = nes_getromdata(&rom_data);
+    if (!rom_data || rom_size < 16)
+        nes_fatal_if_load_failed(NULL);
+    {
+        fceu_load_ext_hint = ACTIVE_FILE->ext;
+    }
     FCEUGI *gameInfo = FCEUI_LoadGame(ACTIVE_FILE->name, rom_data, rom_size,
                                      NULL);
     nes_fatal_if_load_failed(gameInfo);

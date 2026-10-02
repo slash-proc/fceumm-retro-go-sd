@@ -621,6 +621,21 @@ static void FreeFDSMemory(void) {
 }
 
 #ifdef TARGET_GNW
+static int FDSLooksLike(const uint8 *rom, uint32_t rom_size)
+{
+	uint8 header[16];
+
+	if (!rom || rom_size < 16)
+		return 0;
+	memcpy(header, rom, 16);
+	if (!memcmp(header, "FDS\x1a", 4))
+		return 1;
+	/* fwNES raw disk image (no FDS\x1a header) */
+	if (!memcmp(header + 1, "*NINTENDO-HVC*", 14))
+		return 1;
+	return 0;
+}
+
 static int SubLoad(uint8 *fds, uint32_t rom_size) {
 	uint8 header[16];
 	int offset = 0;
@@ -832,7 +847,11 @@ int FDSLoad(const char *name, FCEUFILE *fp) {
 #else
 int FDSLoad(const char *name, const char *rom, uint32_t rom_size) {
 	int x;
-	FCEU_PrintError("FDSLoad\n");
+
+	/* Probe before touching the BIOS — otherwise every failed iNES/UNIF/NSF
+	 * probe surfaces as "FDS BIOS missing" / pollutes the load error. */
+	if (!FDSLooksLike((const uint8 *)rom, rom_size))
+		return 0;
 
 #ifndef LINUX_EMU
     uint32_t size_u32 = 0;

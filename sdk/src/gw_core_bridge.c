@@ -15,7 +15,7 @@
  *   - __aeabi_ldivmod / __aeabi_uldivmod: return a {quot,rem} pair in
  *     r0-r3 per AAPCS, which a plain C function pointer can't express.
  *     ldivmod_quot/ldivmod_rem (and the u* variants) ARE in the ABI for
- *     when this is needed — see docs/PICO8_EXTERNAL_MODULE.md.
+ *     when this is needed.
  * If a core's link fails with "undefined reference to __aeabi_*", that
  * core is the first to need the above.
  *
@@ -67,7 +67,7 @@ void gw_core_bridge_init(void)
     /* Nothing to snapshot yet — see gw_core_bridge.h. */
 }
 
-/* Caprice (and other plain-C cores) call fputs(stderr, …) which expands to
+/* Plain-C cores call fputs(stderr, …) which expands to
  * _impure_ptr->_stderr. Alias the firmware's reent so stderr/stdout work.
  * Runs from .init_array before CORE_ENTRY (see gw_core_entry.S). */
 struct _reent;
@@ -384,12 +384,14 @@ int core_vsnprintf(char *s, size_t n, const char *fmt, va_list ap)
     return gw_firmware_abi()->vsnprintf(s, n, fmt, ap);
 }
 
-/* Minimal LCG — FCEU_MemoryRand / NSF visuals only need non-crypto entropy. */
+/* Minimal LCG. Must span 0..RAND_MAX (newlib: 0x7fffffff). Returning only
+ * 15 bits silently kills callers that do rand()/RAND_MAX (Celeste INST_NOISE
+ * dash whoosh, etc.). */
 static unsigned long core_rand_state = 1;
 int core_rand(void)
 {
     core_rand_state = core_rand_state * 1103515245UL + 12345UL;
-    return (int)((core_rand_state >> 16) & 0x7fff);
+    return (int)((core_rand_state >> 1) & 0x7fffffffUL);
 }
 
 /*
@@ -919,7 +921,7 @@ int core_sscanf(const char *str, const char *fmt, ...)
 }
 
 /* ====================================================================
- * v2 append: TGB Dual (Game Boy / Game Boy Color, C++) porting surface
+ * v2 append: palette settings (external GB/GBC and others)
  * ==================================================================== */
 int32_t core_odroid_settings_Palette_get(void) { return gw_firmware_abi()->odroid_settings_Palette_get(); }
 void    core_odroid_settings_Palette_set(int32_t value) { gw_firmware_abi()->odroid_settings_Palette_set(value); }
@@ -1047,7 +1049,7 @@ size_t core_rg_storage_copy_file_range_to_ram(char *file_path, uint8_t *ram_dest
 }
 
 /* ====================================================================
- * blueMSX (MSX): SHA1 + RAM_EMU bump reset.
+ * MSX external core: SHA1 + RAM_EMU bump reset.
  * ==================================================================== */
 void core_ram_init(void)
 {
@@ -1068,9 +1070,8 @@ int8_t core_calculate_sha1_hw(const uint8_t *data, size_t len, uint8_t *output)
 
 /* libc localtime/gettimeofday — core_time (above) pairs with this one for
  * every "get now as calendar fields" need (time()+localtime(), see the RTC
- * block above). gettimeofday is real RTC access, kept for
- * archGetSystemUpTime (external/blueMSX-go/Src/Libretro/Timer.c) and the
- * Millis/SubSeconds composition above. mktime is not exported: convert
+ * block above). gettimeofday is real RTC access (e.g. MSX Timer / Millis
+ * composition above). mktime is not exported: convert
  * "now" with time(); convert an arbitrary time_t with localtime only. */
 struct tm *core_localtime(const time_t *timer) { return gw_firmware_abi()->localtime(timer); }
 int core_gettimeofday(struct timeval *tv, void *tz)
@@ -1082,8 +1083,8 @@ rg_stat_t core_rg_storage_stat(const char *path)
 {
     return gw_firmware_abi()->rg_storage_stat(path);
 }
-/* PokeMini (TARGET_GNW) calls rg_storage_exists for optional BIOS load.
- * Compose from rg_storage_stat — no ABI append. */
+/* External cores (e.g. PokeMini) call rg_storage_exists for optional BIOS
+ * load. Compose from rg_storage_stat — no ABI append. */
 bool core_rg_storage_exists(const char *path)
 {
     return gw_firmware_abi()->rg_storage_stat(path).exists;
@@ -1098,14 +1099,14 @@ const char *core_rg_basename(const char *path)
 }
 
 /* ====================================================================
- * LCD-Game-Emulator (Game & Watch handhelds): RTC write-back, LCD swap
- * poll, hardware JPEG (background images), LZ4/LZMA ROM unpack.
+ * LCD-Game-Emulator (external Game & Watch core): RTC write-back, LCD
+ * swap poll, hardware JPEG (background images), LZ4/LZMA ROM unpack.
  * odroid_system_switch_app was already on the ABI but missing a
- * trampoline — first consumer is main_gw.c on ROM-load failure.
+ * trampoline — first consumer is the GW core on ROM-load failure.
  *
  * JPEG: ABI exposes JPEG_DecodeToFrameInit/ToFrame/GetSize/DeInit
- * directly so external/LCD-Game-Emulator/src/gw_sys/gw_romloader.c is
- * unchanged (redefine-syms still maps those names → core_*).
+ * directly so the external core's gw_romloader.c is unchanged
+ * (redefine-syms still maps those names → core_*).
  * ==================================================================== */
 void core_GW_SetUnixTM(struct tm *tm) { gw_firmware_abi()->GW_SetUnixTM(tm); }
 uint32_t core_JPEG_DecodeToFrameInit(uint32_t JPEG_Buffer, uint32_t JPEG_Buffer_Size)
@@ -1278,6 +1279,24 @@ double core_log10(double x)
 }
 
 /* ====================================================================
+ * v2 append: soft bilinear blit (OpenMV imlib_draw_image)
+ * ==================================================================== */
+void core_imlib_draw_image(image_t *dst_img, image_t *src_img,
+                           int dst_x_start, int dst_y_start, int dst_stride,
+                           float x_scale, float y_scale, rectangle_t *roi,
+                           int rgb_channel, int alpha,
+                           const uint16_t *color_palette,
+                           const uint8_t *alpha_palette, image_hint_t hint,
+                           imlib_draw_row_callback_t callback,
+                           void *dst_row_override)
+{
+    gw_firmware_abi()->imlib_draw_image(dst_img, src_img,
+        dst_x_start, dst_y_start, dst_stride, x_scale, y_scale, roi,
+        rgb_channel, alpha, color_palette, alpha_palette, hint,
+        callback, dst_row_override);
+}
+
+/* ====================================================================
  * Un-renamed libc exports for archives that still call malloc/strlen/...
  * by their real names (notably toolchain libstdc++.a when a core sets
  * CORE_LDLIBS=-lstdc++). Core .o files go through --redefine-syms so they
@@ -1316,4 +1335,65 @@ char  *getenv(const char *name) { return core_getenv(name); }
 unsigned long strtoul(const char *nptr, char **endptr, int base)
 {
     return core_strtoul(nptr, endptr, base);
+}
+
+/* ---- ours: derived-blob flash cache + four small slots ---------------
+ * A core that decodes or weaves an asset once caches it in external flash
+ * under a key and gets a memory-mapped pointer back on every later launch
+ * (the arcade master's woven 68000 program, its Z80 flag tables, the
+ * YM2610 LFO table). See gw_firmware_abi.h.
+ *
+ * KEEP THESE RESIDENT. The streaming trampolines run while OSPI is
+ * unmapped, so a core that sweeps them into a flash-resident cold section
+ * faults on the first blob. They are ~230 bytes in total. */
+const uint8_t *core_lookup_data_in_flash(const char *key, uint32_t *size_out)
+{
+    return gw_firmware_abi()->lookup_data_in_flash(key, size_out);
+}
+const uint8_t *core_store_data_in_flash(const char *key, const uint8_t *data, uint32_t data_size)
+{
+    return gw_firmware_abi()->store_data_in_flash(key, data, data_size);
+}
+void core_store_data_set_progress_cb(void (*cb)(uint32_t done, uint32_t total))
+{
+    gw_firmware_abi()->store_data_set_progress_cb(cb);
+}
+bool core_store_data_begin(void *st, const char *key, uint32_t total_size)
+{
+    return gw_firmware_abi()->store_data_begin(st, key, total_size);
+}
+bool core_store_data_append(void *st, const uint8_t *buf, uint32_t len)
+{
+    return gw_firmware_abi()->store_data_append(st, buf, len);
+}
+const uint8_t *core_store_data_finish(void *st)
+{
+    return gw_firmware_abi()->store_data_finish(st);
+}
+void core_store_data_abort(void *st)
+{
+    gw_firmware_abi()->store_data_abort(st);
+}
+uint32_t core_flash_cache_usable_size(void)
+{
+    const gw_firmware_abi_t *abi = gw_firmware_abi();
+    if (!abi->flash_cache_usable_size)
+        return 0;
+    return abi->flash_cache_usable_size();
+}
+int core_lcd_get_mode(void)
+{
+    return gw_firmware_abi()->lcd_get_mode();
+}
+void core_odroid_overlay_draw_progress_bar(const char *header, uint8_t progress)
+{
+    gw_firmware_abi()->odroid_overlay_draw_progress_bar(header, progress);
+}
+bool core_rg_storage_mkdir(const char *dir)
+{
+    return gw_firmware_abi()->rg_storage_mkdir(dir);
+}
+const char *core_rg_dirname(const char *path)
+{
+    return gw_firmware_abi()->rg_dirname(path);
 }

@@ -29,6 +29,7 @@ CORE_C_SOURCES := \
 $(CORE_PORTING)/main_nes_fceu.c \
 $(CORE_PORTING)/nes_i18n.c \
 $(CORE_PORTING)/nes_fceu_mappers.c \
+$(CORE_PORTING)/fceu_file_mem.c \
 $(CORE_FCEUMM)/src/cheat.c \
 $(CORE_FCEUMM)/src/fceu-cart.c \
 $(CORE_FCEUMM)/src/fceu-endian.c \
@@ -46,6 +47,7 @@ $(CORE_FCEUMM)/src/md5.c \
 $(CORE_FCEUMM)/src/nsf.c \
 $(CORE_FCEUMM)/src/palette.c \
 $(CORE_FCEUMM)/src/ppu.c \
+$(CORE_FCEUMM)/src/unif.c \
 $(CORE_FCEUMM)/src/video.c \
 $(CORE_FCEUMM)/src/x6502.c \
 $(CORE_FCEUMM)/src/boards/mmc3.c \
@@ -180,7 +182,7 @@ pack: $(TARGET_BIN) $(BUILD_DIR)/$(CORE_NAME)_core_itcm.bin $(PAD_LOGO) $(HEADER
 	$(V)python3 $(PACK_CORE) \
 		--elf $(TARGET_ELF) --bin $(TARGET_BIN) \
 		--system-name "Nintendo Entertainment System" --dirname nes \
-		--extensions "nes fds nsf" \
+		--extensions "nes ines fds nsf unf unif" \
 		--cheat-ext ggcodes \
 		--pad-logo $(PAD_LOGO) \
 		--header-logo $(HEADER_LOGO) \
