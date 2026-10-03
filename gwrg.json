@@ -20,7 +20,7 @@
             "en": "Famicom Disk System BIOS"
           },
           "description": {
-            "en": "Required to play .fds disk images. The core refuses to start one without it, and rejects a file that is not exactly 8 KiB. Cartridge (.nes) and music (.nsf) files do not need it."
+            "en": "Required to play .fds disk images. The core refuses to start one without it, and rejects a file that is not exactly 8 KiB. Cartridge (.nes, .unf, .unif) and music (.nsf) files do not need it."
           }
         },
         {

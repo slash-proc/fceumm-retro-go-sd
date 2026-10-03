@@ -1,5 +1,22 @@
 # Changelog
 
+## [v0.0.6] - 2026-10-03
+
+### Added
+
+- UNIF-format NES cartridge support for `.unf` and `.unif` files, including
+  boards without an iNES mapper id.
+
+### Changed
+
+- Publish the new ROM extensions through the packed core metadata and GWRG
+  release manifest.
+
+### Fixed
+
+- Refuse ROM images larger than available flash cache with a clear size error.
+- Map supported multi-chip UNIF images in place to avoid oversized RAM copies.
+
 ## [v0.0.5]
 
 ### Added

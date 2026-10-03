@@ -17,7 +17,7 @@ Requires `arm-none-eabi-gcc` (hard-float `fpv5-d16`), Make, Python 3 + Pillow.
 | Path | Role |
 |------|------|
 | `/cores/fceumm.bin` | Packed core + mappers + iNES DB + palettes |
-| `/roms/nes/*.nes` (also `.fds`, `.nsf`) | ROMs |
+| `/roms/nes/` (`.nes`, `.fds`, `.nsf`, `.unf`, `.unif`) | ROMs |
 | `/bios/nes/disksys.rom` | FDS BIOS (required for FDS games) |
 
 Palettes and the iNES correction DB ship inside `fceumm.bin` (FCAS sidecars).
